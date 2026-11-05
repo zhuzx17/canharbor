@@ -5,11 +5,11 @@
 #include <string.h>
 #include <stdlib.h>
 static unsigned opened[2], silent[2], nominal[2], data_rate[2], fd[2], queued[2], read_kind[2], status[2], empty_status[2], echo[2];
-static unsigned writes, last_flags, fail_close, reject_silent, bad_readback, last_ret, last_dlc;
+static unsigned writes, last_flags, fail_close, reject_silent, bad_readback, last_ret, last_dlc, bad_version;
 static TPCANMsgFD messages[2];
 static unsigned key(TPCANHandle h) { return h == 0x52 ? 1 : 0; }
-void mock_reset(void) { memset(opened,0,sizeof(opened));memset(silent,0,sizeof(silent));memset(nominal,0,sizeof(nominal));memset(data_rate,0,sizeof(data_rate));memset(fd,0,sizeof(fd));memset(queued,0,sizeof(queued));memset(read_kind,0,sizeof(read_kind));memset(status,0,sizeof(status));memset(echo,0,sizeof(echo));memset(empty_status,0,sizeof(empty_status));writes=last_flags=fail_close=reject_silent=bad_readback=last_ret=last_dlc=0; }
-void mock_option(unsigned option,unsigned value) { if(option==1)fail_close=value;else if(option==2)reject_silent=value;else if(option==3)bad_readback=value;else if(option==4)last_ret=value; }
+void mock_reset(void) { memset(opened,0,sizeof(opened));memset(silent,0,sizeof(silent));memset(nominal,0,sizeof(nominal));memset(data_rate,0,sizeof(data_rate));memset(fd,0,sizeof(fd));memset(queued,0,sizeof(queued));memset(read_kind,0,sizeof(read_kind));memset(status,0,sizeof(status));memset(echo,0,sizeof(echo));memset(empty_status,0,sizeof(empty_status));writes=last_flags=fail_close=reject_silent=bad_readback=last_ret=last_dlc=bad_version=0; }
+void mock_option(unsigned option,unsigned value) { if(option==1)fail_close=value;else if(option==2)reject_silent=value;else if(option==3)bad_readback=value;else if(option==4)last_ret=value;else if(option==5)bad_version=value; }
 unsigned mock_writes(void){return writes;}
 unsigned mock_flags(void){return last_flags;}
 unsigned mock_dlc(void){return last_dlc;}
@@ -21,7 +21,8 @@ void mock_status(unsigned h,unsigned value){status[key((TPCANHandle)h)]=value;}
 size_t mock_size(unsigned which){switch(which){case 0:return sizeof(TPCANMsg);case 1:return sizeof(TPCANTimestamp);case 2:return sizeof(TPCANMsgFD);default:return sizeof(TPCANChannelInformation);}}
 size_t mock_offset(unsigned which){switch(which){case 0:return offsetof(TPCANMsg,DATA);case 1:return offsetof(TPCANTimestamp,micros);case 2:return offsetof(TPCANMsgFD,DATA);default:return offsetof(TPCANChannelInformation,device_id);}}
 TPCANStatus CAN_GetValue(TPCANHandle h,TPCANParameter p,void *out,DWORD len){
- if(p==PCAN_API_VERSION){if(len<6)return PCAN_ERROR_ILLPARAMVAL;memcpy(out,"1.0.2",6);return 0;}
+ if(p==PCAN_API_VERSION){if(len<6)return PCAN_ERROR_ILLPARAMVAL;memcpy(out,"4.9.0",6);return 0;}
+ if(p==PCAN_CHANNEL_VERSION && h==PCAN_NONEBUS){if(len<6)return PCAN_ERROR_ILLPARAMVAL;memcpy(out,bad_version?"9.9.9":"1.0.2",6);return 0;}
  if(p==PCAN_ATTACHED_CHANNELS_COUNT){if(len<4)return PCAN_ERROR_ILLPARAMVAL;*(DWORD*)out=2;return 0;}
  if(p==PCAN_ATTACHED_CHANNELS){if(len<2*sizeof(TPCANChannelInformation))return PCAN_ERROR_ILLPARAMVAL;TPCANChannelInformation *tab=out;memset(tab,0,2*sizeof(*tab));for(unsigned i=0;i<2;i++){tab[i].channel_handle=(WORD)(0x51+i);tab[i].device_type=PCAN_USB;tab[i].device_features=i;tab[i].channel_condition=opened[i]?PCAN_CHANNEL_OCCUPIED:PCAN_CHANNEL_AVAILABLE;snprintf(tab[i].device_name,sizeof(tab[i].device_name),"Synthetic PEAK %u",i);}return 0;}
  if(len<4)return PCAN_ERROR_ILLPARAMVAL;unsigned k=key(h);DWORD value=0;

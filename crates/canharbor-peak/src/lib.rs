@@ -77,8 +77,10 @@ fn set_word(
 }
 fn inspect(api: &ffi::Api) -> Result<Vec<Device>, Error> {
     let mut version = [0u8; 64];
+    // PCAN_CHANNEL_VERSION on PCAN_NONEBUS identifies libPeakUSB itself.
+    // PCAN_API_VERSION instead reports the PCAN-Basic API version (4.9.0).
     // SAFETY: the version parameter writes at most the supplied buffer length.
-    checked(unsafe { (api.get)(0, 0x05, version.as_mut_ptr().cast(), version.len() as u32) })?;
+    checked(unsafe { (api.get)(0, 0x06, version.as_mut_ptr().cast(), version.len() as u32) })?;
     if version.split(|byte| *byte == 0).next() != Some(b"1.0.2".as_slice()) {
         return Err(Error::Unsupported);
     }
@@ -701,6 +703,18 @@ mod tests {
             data_bitrate: fd.then_some(2_000_000),
             listen_only,
         }
+    }
+    #[test]
+    fn discovery_checks_library_version_separately_from_pcan_api_version() {
+        let _serial = SERIAL.blocking_lock();
+        reset();
+        assert_eq!(unsafe { discover(&image()) }.unwrap().len(), 2);
+        option(5, 1);
+        assert!(matches!(
+            unsafe { discover(&image()) },
+            Err(Error::Unsupported)
+        ));
+        reset();
     }
     #[test]
     fn abi_layout_matches_the_retained_c_header_and_shared_channel_claims() {
