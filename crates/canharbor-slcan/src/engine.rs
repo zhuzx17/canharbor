@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Serialized, bounded command engine. Blocking calls belong on an owned worker.
-use crate::{Decoder, Response, bitrate, encode, serial::Transport};
+use crate::{Decoder, Profile, Response, encode_with_profile, serial::Transport};
 use canharbor_core::{Config, Frame};
 use std::{
     collections::VecDeque,
@@ -30,7 +30,13 @@ pub struct Received {
     pub timestamp_ms: Option<u16>,
     pub received_at: tokio::time::Instant,
 }
+#[derive(Debug, PartialEq, Eq)]
+pub enum FirmwareVersion {
+    Lawicel { hardware: u8, software: u8 },
+    Canable(String),
+}
 pub struct Engine<T> {
+    profile: Profile,
     transport: T,
     decoder: Decoder,
     replies: VecDeque<Result<Response, crate::Error>>,
@@ -43,9 +49,13 @@ pub struct Engine<T> {
 }
 impl<T: Transport> Engine<T> {
     pub fn new(transport: T) -> Self {
+        Self::with_profile(transport, Profile::Lawicel)
+    }
+    pub fn with_profile(transport: T, profile: Profile) -> Self {
         Self {
+            profile,
             transport,
-            decoder: Decoder::default(),
+            decoder: Decoder::with_profile(profile),
             replies: VecDeque::new(),
             frames: VecDeque::new(),
             statuses: VecDeque::new(),
@@ -159,6 +169,11 @@ impl<T: Transport> Engine<T> {
         guard: &impl Fn() -> Result<(), canharbor_core::Error>,
     ) -> Result<(), Error> {
         self.write(command, guard)?;
+        // CANable commands have no ACK/NACK. A complete host write is the only
+        // available confirmation, including configuration and close requests.
+        if self.profile == Profile::CanableFd {
+            return Ok(());
+        }
         match self.reply(Instant::now() + WAIT)? {
             Response::Ack => Ok(()),
             _ => {
@@ -169,14 +184,24 @@ impl<T: Transport> Engine<T> {
     }
     /// Version handshake sends no leading CR: terminating an unknown partial TX
     /// record could itself cause transmission. No EEPROM-changing commands are used.
-    pub fn initialize(&mut self) -> Result<(u8, u8), Error> {
+    pub fn initialize(&mut self) -> Result<FirmwareVersion, Error> {
+        self.decoder.expect_version();
         self.write(b"V\r", &|| Ok(()))?;
         let deadline = Instant::now() + WAIT;
         for _ in 0..64 {
             match self.reply(deadline)? {
                 Response::Version { hardware, software } => {
                     self.initialized = true;
-                    return Ok((hardware, software));
+                    return Ok(match self.profile {
+                        Profile::Lawicel => FirmwareVersion::Lawicel { hardware, software },
+                        Profile::CanableFd => {
+                            FirmwareVersion::Canable(format!("V{hardware:02X}{software:02X}"))
+                        }
+                    });
+                }
+                Response::FirmwareVersion(version) if self.profile == Profile::CanableFd => {
+                    self.initialized = true;
+                    return Ok(FirmwareVersion::Canable(version));
                 }
                 Response::Ack => continue,
                 _ => {
@@ -196,10 +221,8 @@ impl<T: Transport> Engine<T> {
         if !self.initialized {
             return Err(canharbor_core::Error::InvalidState.into());
         }
-        if config.data_bitrate.is_some() {
-            return Err(crate::Error::Unsupported.into());
-        }
-        let rate = bitrate(config.nominal_bitrate)?;
+        self.profile.validate_config(config)?;
+        let rate = self.profile.bitrate(config.nominal_bitrate)?;
         // A closed CAN232 may reject C. The subsequent S command must positively
         // confirm configuration while closed before O or L can be sent.
         match self.ack(b"C\r", &guard) {
@@ -208,8 +231,26 @@ impl<T: Transport> Engine<T> {
         }
         self.started = None;
         self.ack(&rate, &guard)?;
+        if self.profile == Profile::CanableFd {
+            if let Some(rate) = config.data_bitrate {
+                let command = match rate {
+                    2_000_000 => b"Y2\r",
+                    5_000_000 => b"Y5\r",
+                    _ => return Err(crate::Error::Unsupported.into()),
+                };
+                self.ack(command, &guard)?;
+            }
+            self.ack(if config.listen_only { b"M1\r" } else { b"M0\r" }, &guard)?;
+        }
         self.frames.clear();
-        self.ack(if config.listen_only { b"L\r" } else { b"O\r" }, &guard)?;
+        self.ack(
+            if config.listen_only && self.profile == Profile::Lawicel {
+                b"L\r"
+            } else {
+                b"O\r"
+            },
+            &guard,
+        )?;
         self.started = Some(config);
         Ok(())
     }
@@ -231,7 +272,10 @@ impl<T: Transport> Engine<T> {
         if self.started.is_none_or(|config| config.listen_only) {
             return Err(canharbor_core::Error::InvalidState.into());
         }
-        let command = encode(frame)?;
+        if matches!(frame, Frame::FdData { .. }) && self.started.unwrap().data_bitrate.is_none() {
+            return Err(crate::Error::Unsupported.into());
+        }
+        let command = encode_with_profile(frame, self.profile)?;
         self.ready()?;
         guard()?;
         // Once an I/O attempt begins, retain uncertainty until firmware replies.
@@ -241,6 +285,11 @@ impl<T: Transport> Engine<T> {
                 self.unknown -= 1;
             }
             return Err(error);
+        }
+        if self.profile == Profile::CanableFd {
+            // No firmware acceptance or echo exists. Keep this count even when
+            // a remote node later replies: it cannot confirm individual writes.
+            return Ok(());
         }
         match self.reply(Instant::now() + WAIT) {
             Ok(Response::Ack) => {
@@ -269,6 +318,9 @@ impl<T: Transport> Engine<T> {
         polling: bool,
         guard: impl Fn() -> Result<(), canharbor_core::Error>,
     ) -> Result<(), Error> {
+        if polling && self.profile == Profile::CanableFd {
+            return Err(crate::Error::Unsupported.into());
+        }
         if self.poisoned {
             return Err(Error::Poisoned);
         }
@@ -317,6 +369,9 @@ impl<T: Transport> Engine<T> {
         &mut self,
         guard: impl Fn() -> Result<(), canharbor_core::Error>,
     ) -> Result<(), Error> {
+        if self.profile == Profile::CanableFd {
+            return Err(crate::Error::Unsupported.into());
+        }
         self.write(b"F\r", &guard)?;
         match self.reply(Instant::now() + WAIT)? {
             Response::Status(flags) => {

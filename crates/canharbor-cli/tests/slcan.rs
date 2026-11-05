@@ -52,6 +52,13 @@ fn cli(root: &std::path::Path, args: &[&str]) -> String {
 }
 #[test]
 fn explicit_serial_service_supports_cli_discovery_monitor_and_send_without_hardware() {
+    serial_service(false);
+}
+#[test]
+fn canable_fd_service_supports_explicit_profile_and_no_ack_firmware() {
+    serial_service(true);
+}
+fn serial_service(canable: bool) {
     let (mut master, mut slave) = (-1, -1);
     let mut name = [0 as libc::c_char; libc::PATH_MAX as usize];
     // SAFETY: live output pointers and a PATH_MAX buffer are supplied to openpty.
@@ -90,13 +97,16 @@ fn explicit_serial_service_supports_cli_discovery_monitor_and_send_without_hardw
                 Ok(n) => {
                     for &byte in &bytes[..n] {
                         if byte != b'\r' {
-                            if line.len() < 64 {
+                            if line.len() < 139 {
                                 line.push(byte);
                             }
                             continue;
                         }
                         log.lock().unwrap().push(line.clone());
                         let response = match line.as_slice() {
+                            b"V" if canable => b"custom-build\r".as_slice(),
+                            b"O" if canable => b"d5521AC\r",
+                            _ if canable => b"",
                             b"V" => b"V0234\r".as_slice(),
                             b"L" => b"\rt5521AC\r",
                             b"F" => b"F00\r",
@@ -126,7 +136,8 @@ fn explicit_serial_service_supports_cli_discovery_monitor_and_send_without_hardw
         .mode(0o700)
         .create(&root)
         .unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_canharbor"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_canharbor"));
+    command
         .arg("--runtime-dir")
         .arg(&root)
         .args([
@@ -138,9 +149,11 @@ fn explicit_serial_service_supports_cli_discovery_monitor_and_send_without_hardw
             "115200",
         ])
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    if canable {
+        command.args(["--slcan-profile", "canable-fd"]);
+    }
+    let child = command.spawn().unwrap();
     let mut service = Service {
         child,
         root,
@@ -172,45 +185,65 @@ fn explicit_serial_service_supports_cli_discovery_monitor_and_send_without_hardw
         .find(|device| device["backend"] == "slcan")
         .unwrap();
     assert_eq!(device["verification"], "hardware_unverified");
-    assert_eq!(device["channels"][0]["fd"], false);
+    assert_eq!(device["channels"][0]["fd"], canable);
     let channel = device["channels"][0]["id"].as_str().unwrap();
-    let received = cli(
-        &service.root,
-        &[
-            "monitor",
-            "--channel",
-            channel,
-            "--listen-only",
-            "--count",
-            "1",
-        ],
-    );
+    let mut monitor = vec![
+        "monitor",
+        "--channel",
+        channel,
+        "--listen-only",
+        "--count",
+        "1",
+    ];
+    if canable {
+        monitor.extend(["--fd", "--data-bitrate", "5000000"]);
+    }
+    let received = cli(&service.root, &monitor);
     let received: serde_json::Value = serde_json::from_str(&received).unwrap();
     assert_eq!(received["frame"]["id"], 0x552);
     assert_eq!(received["direction"], "rx");
-    let receipt: serde_json::Value = serde_json::from_str(&cli(
-        &service.root,
-        &[
-            "send",
-            "--channel",
-            channel,
-            "--id",
-            "553",
-            "--data",
-            "BD",
-            "--active",
-        ],
-    ))
-    .unwrap();
+    let mut send = vec![
+        "send",
+        "--channel",
+        channel,
+        "--id",
+        "553",
+        "--data",
+        "BD",
+        "--active",
+    ];
+    if canable {
+        send.extend(["--fd", "--data-bitrate", "5000000"]);
+    }
+    let receipt: serde_json::Value = serde_json::from_str(&cli(&service.root, &send)).unwrap();
     assert_eq!(receipt["confirmation"], "backend_submitted");
     assert_eq!(
         commands
             .lock()
             .unwrap()
             .iter()
-            .filter(|line| line.starts_with(b"t"))
+            .filter(|line| line.starts_with(if canable { b"d553" } else { b"t553" }))
             .count(),
         1
     );
+    if canable {
+        assert!(commands.lock().unwrap().iter().any(|line| line == b"M1"));
+        assert!(commands.lock().unwrap().iter().any(|line| line == b"Y5"));
+        assert!(
+            !commands
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|line| line == b"F" || line == b"P" || line == b"L")
+        );
+        unsafe {
+            libc::kill(service.child.id() as libc::pid_t, libc::SIGINT);
+        }
+        assert_eq!(
+            service.child.wait().unwrap().code(),
+            Some(7),
+            "unconfirmed TX must remain visible at shutdown"
+        );
+    }
     drop(slave);
 }

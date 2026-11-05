@@ -53,6 +53,10 @@ enum Command {
         #[cfg(feature = "slcan")]
         #[arg(long, requires = "slcan")]
         slcan_polling: bool,
+        /// Explicit firmware dialect; CANable FD commands have no firmware acknowledgement.
+        #[cfg(feature = "slcan")]
+        #[arg(long, requires = "slcan", value_parser = ["lawicel", "canable-fd"])]
+        slcan_profile: Option<String>,
         #[arg(long,requires_all=["usb_index","usb_interface","usb_alternate"])]
         usb: Option<String>,
         #[arg(long, requires = "usb")]
@@ -360,6 +364,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         serial_baud,
         #[cfg(feature = "slcan")]
         slcan_polling,
+        #[cfg(feature = "slcan")]
+        slcan_profile,
     } = args.command
     {
         if open && no_web {
@@ -389,6 +395,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "slcan")]
         if let Some(path) = slcan {
+            let profile = match slcan_profile.as_deref().unwrap_or("lawicel") {
+                "lawicel" => canharbor_slcan::Profile::Lawicel,
+                "canable-fd" => canharbor_slcan::Profile::CanableFd,
+                _ => unreachable!("validated by clap"),
+            };
+            if slcan_polling && profile == canharbor_slcan::Profile::CanableFd {
+                return Err(status::input(
+                    "--slcan-polling is unsupported with --slcan-profile canable-fd",
+                ));
+            }
             let baud =
                 serial_baud.ok_or_else(|| status::input("--slcan requires --serial-baud"))?;
             let transport = tokio::task::spawn_blocking(move || {
@@ -396,10 +412,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await??;
             backends.push(Arc::new(
-                canharbor_slcan::backend::SlcanBackend::open(
+                canharbor_slcan::backend::SlcanBackend::open_with_profile(
                     transport,
                     Uuid::new_v4().simple().to_string(),
                     slcan_polling,
+                    profile,
                 )
                 .await?,
             ));
@@ -781,6 +798,22 @@ mod selection_tests {
         assert!(Args::try_parse_from(["canharbor", "serve", "--slcan", "/dev/null"]).is_err());
         assert!(Args::try_parse_from(["canharbor", "serve", "--serial-baud", "115200"]).is_err());
         assert!(Args::try_parse_from(["canharbor", "serve", "--slcan-polling"]).is_err());
+        assert!(
+            Args::try_parse_from(["canharbor", "serve", "--slcan-profile", "canable-fd"]).is_err()
+        );
+        assert!(
+            Args::try_parse_from([
+                "canharbor",
+                "serve",
+                "--slcan",
+                "/dev/null",
+                "--serial-baud",
+                "115200",
+                "--slcan-profile",
+                "unknown"
+            ])
+            .is_err()
+        );
         assert!(
             Args::try_parse_from([
                 "canharbor",
