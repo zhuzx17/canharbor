@@ -58,7 +58,7 @@ canharbor/
 
 `server` 包含带版本的网络 DTO，禁止直接把核心内部结构序列化为长期 API。以后有独立 Rust 远程客户端需求再拆 `canharbor-api` / `canharbor-client`。C ABI 和 Python 绑定在模型稳定后新增 `canharbor-ffi`，不挤入首版。
 
-前端 `web` 是一个独立 npm 包，不叫 Rust crate。先不为每个过滤器、队列或文件格式单独建 crate。
+前端 `web` 是一个由 Bun 管理的独立前端包，不叫 Rust crate。先不为每个过滤器、队列或文件格式单独建 crate。
 
 ## 4. 技术选型
 

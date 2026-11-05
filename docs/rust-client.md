@@ -67,3 +67,16 @@ Cloning `LocalClient` shares its native identity and HTTP connection pool. Call
 `LocalClient::new` to create an independent identity. The C stream worker uses
 a clone of its parent client so opening subscriptions does not reset identity
 or avoid service quotas.
+
+## Periodic tasks
+
+`start_periodic(session, generation, &PeriodicRequest)` uses the existing active
+session and never acquires, renews or retries. `TaskStartUnknown` retains session,
+generation and request ID if admission cannot be established. Use
+`recover_periodic(session, request, Some(generation))` for read-only recovery;
+None is not proof of nonexecution after retention expiry or service restart.
+Omitting generation can return `AmbiguousTask`. `periodic_tasks`, `periodic_task`
+and `cancel_periodic` provide typed inspection/cancellation. `renew` and `release`
+are explicit caller operations. Dropping a client does not cancel an admitted
+task or renew its lease. See [periodic-api.md](periodic-api.md) for bounds and
+submission semantics.

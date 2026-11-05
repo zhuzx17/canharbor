@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Generated from Rust wire DTOs. Run npm run api:generate --prefix web. Do not edit.
+// Generated from Rust wire DTOs. Run bun run --cwd web api:generate. Do not edit.
 
 /**
  * Canonical u64 encoded as a decimal string to avoid JavaScript rounding.

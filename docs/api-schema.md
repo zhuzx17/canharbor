@@ -5,9 +5,9 @@ The implemented M0 payloads are defined in `crates/canharbor-server/src/dto.rs`.
 ## Generate and check
 
 ```sh
-npm ci --prefix web
-npm run api:generate --prefix web
-npm run api:check --prefix web
+bun install --cwd web --frozen-lockfile
+bun run --cwd web api:generate
+bun run --cwd web api:check
 ```
 
 The generator runs the Rust `export-api` binary without the `web-ui` feature, writes [JSON Schema draft-07](../api/schema.json), and derives [TypeScript types](../web/src/generated/api.ts) using the locked Node toolchain dependencies. Node is not needed to generate JSON Schema directly:

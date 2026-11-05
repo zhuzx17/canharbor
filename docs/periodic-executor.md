@@ -2,7 +2,8 @@
 
 `canharbor-tasks` provides Rust-owned periodic execution over an existing active
 session. The service task routes are documented in [periodic-api.md](periodic-api.md);
-CLI commands, SDK helpers and Web task controls remain separate integration work.
+CLI, SDK and Web controls use that service API and never schedule backend
+transmissions directly.
 
 A plan contains one immutable frame, 1–6000 scheduled attempts, an interval of
 10 ms–60 s, and a scheduling horizon of at most 60 seconds. There are at most

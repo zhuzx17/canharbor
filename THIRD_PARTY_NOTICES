@@ -13,7 +13,7 @@ firmware, Linux kernel driver, binary, or captured CAN traffic is included.
 See docs/m1-gsusb.md for source paths, provenance, and scope.
 
 Generated browser validators retain their own bundled dependency notices inline
-in web/src/generated/api-validators.js. Cargo.lock and web/package-lock.json
+in web/src/generated/api-validators.js. Cargo.lock and web/bun.lock
 identify the dependency versions; this file is not a complete release SBOM.
 
 nusb 0.2.9 (https://github.com/kevinmehall/nusb) is used as a Cargo dependency.

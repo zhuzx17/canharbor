@@ -7,12 +7,12 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
-    "test:e2e": "playwright test",
+    "build": "bun run typecheck && bun --bun run vite build",
+    "test:e2e": "bun --bun run playwright test",
     "format": "prettier --write src tests *.ts index.html ../scripts/*.mjs",
     "format:check": "prettier --check src tests *.ts index.html ../scripts/*.mjs",
-    "api:generate": "node ../scripts/generate-api.mjs",
-    "api:check": "node ../scripts/generate-api.mjs --check"
+    "api:generate": "bun ../scripts/generate-api.mjs",
+    "api:check": "bun ../scripts/generate-api.mjs --check"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -30,5 +30,6 @@
     "json-schema-to-typescript": "^15.0.0",
     "ajv": "^8.17.1",
     "esbuild": "^0.28.2"
-  }
+  },
+  "packageManager": "bun@1.4.2"
 }

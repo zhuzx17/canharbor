@@ -88,3 +88,11 @@ callbacks or implicit reconnects. Explicit stream close interrupts a waiting
 read. Parent-client close also revokes its streams. The worker bounds close
 attempts to two seconds. A stream may report a terminal failure even after a
 previous successful read; callers must inspect each response status and message.
+
+Periodic task operations use the existing bounded `canharbor_request` ABI with
+POST `/sessions/{session}/tasks`, GET `/tasks`, GET `/tasks/{id}` and POST
+`/tasks/{id}/cancel`. Supply the original generation on admission and on explicit
+lease renewal. On status 7 retain the caller-generated request ID and query GET
+`/tasks`; never automatically repeat admission. Native readers match session,
+request ID and generation; ambiguous or expired results cannot establish that no
+transmission occurred. No new native symbol or ABI major is required.

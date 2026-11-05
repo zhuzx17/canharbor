@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Same-user Unix-domain HTTP client. No implicit acquisition or TX retry.
 pub use canharbor_api as api;
+mod periodic;
 mod stream;
+pub use periodic::{AmbiguousTask, TaskStartUnknown};
 use serde_json::Value;
 use std::{path::PathBuf, time::Duration};
 pub use stream::{EventStream, StreamUnavailable};

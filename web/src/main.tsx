@@ -13,6 +13,7 @@ import {
 import "./style.css";
 import { TransmissionActions } from "./TransmissionActions";
 import { OfflineCapturePanel } from "./OfflineCapturePanel";
+import { TaskPanel } from "./TaskPanel";
 import { CapturePanel } from "./CapturePanel";
 import { decode } from "./contract";
 import type { SessionMode, CreateRequest, Subscribe } from "./generated/api";
@@ -59,9 +60,11 @@ function App() {
   const [brs, setBrs] = useState(false);
   const [dlc, setDlc] = useState(0);
   // A page must explicitly acquire control, even if the shared cookie already owns a lease.
-  const [lease, setLease] = useState<{ id: string; generation: string } | null>(
-    null,
-  );
+  const [lease, setLease] = useState<{
+    id: string;
+    generation: string;
+    renewAt: number;
+  } | null>(null);
   const session = sessions.find((s) => s.id === selectedId);
   const controls =
     !!session &&
@@ -118,20 +121,39 @@ function App() {
   }, [auth]);
   useEffect(() => {
     if (!auth || !lease) return;
-    const timer = setInterval(() => {
-      api(
-        "session",
-        `/sessions/${lease.id}/lease/renew`,
-        "POST",
-        {},
-        auth,
-        lease.generation,
-      ).catch((e) => {
-        setError(String(e));
-        setLease(null);
-      });
-    }, 5000);
-    return () => clearInterval(timer);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const renew = async () => {
+      const started = performance.now();
+      try {
+        await api(
+          "session",
+          `/sessions/${lease.id}/lease/renew`,
+          "POST",
+          {},
+          auth,
+          lease.generation,
+        );
+      } catch (e) {
+        if (active) {
+          setError(String(e));
+          setLease(null);
+        }
+        return;
+      }
+      // Anchor each renewal to its request, not a possibly delayed response.
+      // Keep one request in flight and never reacquire an expired lease.
+      if (active)
+        timer = setTimeout(
+          renew,
+          Math.max(0, started + 5000 - performance.now()),
+        );
+    };
+    timer = setTimeout(renew, Math.max(0, lease.renewAt - performance.now()));
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [auth, lease]);
   useEffect(() => {
     pending.current = [];
@@ -499,6 +521,7 @@ function App() {
                 disabled={!session || !!session.controller || busy}
                 onClick={() =>
                   act(async () => {
+                    const requested = performance.now();
                     const owned = await api(
                       "session",
                       `/sessions/${selectedId}/lease`,
@@ -506,7 +529,11 @@ function App() {
                       {},
                       auth!,
                     );
-                    setLease({ id: owned.id, generation: owned.generation });
+                    setLease({
+                      id: owned.id,
+                      generation: owned.generation,
+                      renewAt: requested + 5000,
+                    });
                   })
                 }
               >
@@ -750,6 +777,22 @@ function App() {
               frame={() => validateFrame(kind, id, extended, data, brs, dlc)}
               onError={setError}
               onNotice={setNotice}
+            />
+            <TaskPanel
+              key={auth?.client_id ?? "unpaired"}
+              auth={auth}
+              session={selectedId}
+              generation={lease?.generation}
+              disabled={
+                !controls ||
+                session?.state !== "running" ||
+                session?.mode !== "active" ||
+                busy ||
+                streamState !== "Live"
+              }
+              frame={() => validateFrame(kind, id, extended, data, brs, dlc)}
+              onError={setError}
+              onControlLost={() => setLease(null)}
             />
             <p className="transmit-note">
               Requires a running, active channel and control. Submission does

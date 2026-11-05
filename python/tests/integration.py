@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Executed by the Rust ABI integration test against a virtual service."""
 import sys
-from canharbor import Client, CanHarborError
+from canharbor import Client, CanHarborError, TaskStartUnknown
 
 runtime, library = sys.argv[1:]
 with Client(runtime, library=library) as first, Client(runtime, library=library) as other:
@@ -52,6 +52,36 @@ with Client(runtime, library=library) as first, Client(runtime, library=library)
             raise AssertionError("oversized query accepted")
         except CanHarborError as error:
             assert error.status == 2
+    periodic = first.start_periodic(session, generation, request_id="python-periodic", frame=frame, count=1, interval_ms=1000)
+    assert other.periodic_by_request(session, "python-periodic", generation=generation)["id"] == periodic["id"]
+    deadline = time.monotonic() + 3
+    while True:
+        task = other.periodic_task(periodic["id"])
+        if task["state"] == "completed":
+            assert task["submitted"] == "1"
+            break
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    long_task = first.start_periodic(session, generation, request_id="python-cancel", frame=frame, count=2, interval_ms=60000)
+    other.cancel_periodic(long_task["id"])
+    assert other.periodic_by_request(session, "absent", generation=generation) is None
+    from unittest.mock import patch
+    with patch.object(first, "request", side_effect=CanHarborError(7, {"error": "lost response"})) as calls:
+        try:
+            first.start_periodic(session, generation, request_id="lost-start", frame=frame, count=1, interval_ms=10)
+            raise AssertionError("uncertain admission accepted")
+        except TaskStartUnknown as error:
+            assert (error.session, error.generation, error.request_id) == (session, generation, "lost-start")
+        assert calls.call_count == 1
+    with patch.object(other, "periodic_tasks", return_value={"tasks": [
+            {"session_id": session, "client_request_id": "ambiguous", "generation": "1"},
+            {"session_id": session, "client_request_id": "ambiguous", "generation": "2"}]}):
+        try:
+            other.periodic_by_request(session, "ambiguous")
+            raise AssertionError("ambiguous task was selected")
+        except ValueError:
+            pass
+        assert other.periodic_by_request(session, "ambiguous", generation="2")["generation"] == "2"
     first.renew(session, generation)
     recorded = first.request("POST", f"/captures/{capture}/stop", {})
     assert recorded["complete"]

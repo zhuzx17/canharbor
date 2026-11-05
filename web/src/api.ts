@@ -71,6 +71,7 @@ export async function api<K extends ContractName | "empty">(
     method,
     signal: AbortSignal.timeout(10_000),
     redirect: "error",
+    cache: "no-store",
     headers,
     credentials: "same-origin",
     body: method === "GET" ? undefined : JSON.stringify(body ?? {}),

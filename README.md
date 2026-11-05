@@ -6,11 +6,11 @@ CANHarbor provides a local Rust service, a `canharbor` CLI, and a browser workbe
 
 ## Build and run
 
-Requirements: the pinned Rust toolchain, Node.js 24 or later, and npm. macOS is the target platform; the Unix transport also builds on Linux.
+Requirements: the pinned Rust toolchain, Bun 1.4.2. macOS is the target platform; the Unix transport also builds on Linux.
 
 ```sh
-npm ci --prefix web
-npm run build --prefix web
+bun install --cwd web --frozen-lockfile
+bun run --cwd web build
 cargo build -p canharbor-cli --features web-ui --locked
 ./target/debug/canharbor serve --open
 ```
@@ -41,13 +41,13 @@ The CLI and browser share channel reservations. An observer cannot change anothe
 ## Development checks
 
 ```sh
-npm run api:check --prefix web
-npm run build --prefix web
+bun run --cwd web api:check
+bun run --cwd web build
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 cargo build -p canharbor-cli --features web-ui --locked
-(cd web && npx playwright install chromium && npm run test:e2e)
+(cd web && bun x --bun playwright install chromium && bun run test:e2e)
 ```
 
 The browser test starts its own local service, then checks CLI-to-browser and browser-to-CLI delivery. It also checks that a second browser cannot acquire an occupied control lease and that refresh does not resume sending.
@@ -79,3 +79,5 @@ Device inventory reports: [device-diagnostics.md](docs/device-diagnostics.md).
 Bounded communication checks: [sequence-test.md](docs/sequence-test.md).
 
 Service-owned periodic tasks: [periodic-api.md](docs/periodic-api.md).
+
+Periodic task controls: [CLI](docs/periodic-cli.md), [Web](docs/periodic-web.md), [Rust SDK](docs/rust-client.md).

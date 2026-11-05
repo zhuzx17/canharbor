@@ -1,6 +1,6 @@
 # CANHarbor 许可与发布设计
 
-CANHarbor 自有代码、Web UI 与新增文档采用 AGPL-3.0-or-later。仓库现有 LICENSE 为 AGPLv3 正文；新增 README 明确选择 or-later，实施时 Cargo/npm 元数据与文件 SPDX 标识需保持一致。第三方文件继续保留原许可，不能只因加入仓库就改写其授权。
+CANHarbor 自有代码、Web UI 与新增文档采用 AGPL-3.0-or-later。仓库现有 LICENSE 为 AGPLv3 正文；新增 README 明确选择 or-later，实施时 Cargo/前端包元数据与文件 SPDX 标识需保持一致。第三方文件继续保留原许可，不能只因加入仓库就改写其授权。
 
 ## 1. Web UI 与源码交付
 

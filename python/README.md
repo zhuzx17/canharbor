@@ -73,3 +73,9 @@ They do not reconnect or resume tasks. Each stream allows one active reader;
 its streams. Handle terminal errors explicitly; a successful read is not a
 promise that the stream remains connected. The native event-stream extension is
 optional when loading an older ABI 1 library.
+
+Periodic tasks use `start_periodic(session, generation, request_id=..., frame=...,
+count=..., interval_ms=...)`, `periodic_tasks`, `periodic_task`, `cancel_periodic`
+and read-only `periodic_by_request(..., generation=...)`. Call `renew` explicitly;
+helpers never acquire control or retry. `TaskStartUnknown` preserves recovery
+identifiers. Missing results do not prove nonexecution after expiry/restart.

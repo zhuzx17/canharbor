@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if check {
         if fs::read_to_string(&path)? != output {
             return Err(format!(
-                "{} is stale; run npm run api:generate --prefix web",
+                "{} is stale; run bun run --cwd web api:generate",
                 path.display()
             )
             .into());

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 mod sequence;
 mod status;
+mod tasks;
 use canharbor_core::runtime::Runtime;
 use canharbor_server::{
     dto::{FrameDto, FrameKind, StreamMessage},
@@ -60,6 +61,10 @@ enum Command {
         usb_interface: Option<u8>,
         #[arg(long, requires = "usb")]
         usb_alternate: Option<u8>,
+    },
+    Task {
+        #[command(subcommand)]
+        command: tasks::Command,
     },
     Sequence {
         #[command(subcommand)]
@@ -471,6 +476,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let client = Client::new(dir)?;
     match args.command {
+        Command::Task { command } => tasks::run(&client.local, command).await?,
         Command::Sequence { command } => sequence::run(&client.local, command).await?,
         Command::Capture {command} => match command {
             CaptureCommand::Inspect {..} => unreachable!(),

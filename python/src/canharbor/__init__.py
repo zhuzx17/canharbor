@@ -9,7 +9,7 @@ from threading import Lock
 from weakref import finalize
 from typing import Any, Optional
 
-__all__ = ["Client", "EventStream", "CanHarborError"]
+__all__ = ["Client", "EventStream", "CanHarborError", "TaskStartUnknown"]
 
 
 class CanHarborError(RuntimeError):
@@ -17,6 +17,13 @@ class CanHarborError(RuntimeError):
         self.status = status
         self.response = response
         super().__init__(f"CANHarbor status {status}: {response}")
+
+
+class TaskStartUnknown(CanHarborError):
+    """Recover using periodic_by_request; never automatically repeat admission."""
+    def __init__(self, session: str, generation: str, request_id: str, response: Any):
+        self.session, self.generation, self.request_id = session, generation, request_id
+        super().__init__(7, response)
 
 
 def _library(path: str):
@@ -191,6 +198,49 @@ class Client:
                 raise ValueError("generation must be a canonical u64 string")
             query["generation"] = generation
         return self.request("GET", self._session(session) + "/tx", query=query)
+
+    def start_periodic(self, session: str, generation: str, *, request_id: str,
+                       frame: dict, count: int, interval_ms: int):
+        """Caller controls renewal. A failed response must never cause a retry."""
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("request ID must contain 1–128 Unicode characters")
+        if type(count) is not int or type(interval_ms) is not int or not 1 <= count <= 6000 or not 10 <= interval_ms <= 60000 or (count - 1) * interval_ms > 60000:
+            raise ValueError("periodic plan exceeds bounds")
+        if (not isinstance(generation, str) or not generation.isascii() or not generation.isdecimal()
+                or len(generation) > 20 or str(int(generation)) != generation or int(generation) > 18446744073709551615):
+            raise ValueError("generation must be a canonical u64 string")
+        path = self._session(session) + "/tasks"
+        try:
+            return self.request("POST", path, {"client_request_id": request_id, "frame": frame,
+                                "count": count, "interval_ms": interval_ms}, generation=generation)
+        except CanHarborError as error:
+            if error.status == 7:
+                raise TaskStartUnknown(session, generation, request_id, error.response) from error
+            raise
+
+    def periodic_tasks(self):
+        return self.request("GET", "/tasks")
+
+    def periodic_task(self, task: str):
+        from uuid import UUID
+        return self.request("GET", f"/tasks/{UUID(task)}")
+
+    def cancel_periodic(self, task: str):
+        from uuid import UUID
+        return self.request("POST", f"/tasks/{UUID(task)}/cancel", {})
+
+    def periodic_by_request(self, session: str, request_id: str, *, generation: Optional[str] = None):
+        """Read-only recovery; None is not proof of nonexecution after expiry/restart."""
+        self._session(session)
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError("invalid request ID")
+        if generation is not None and (not isinstance(generation, str) or not generation.isascii() or not generation.isdecimal() or len(generation) > 20 or str(int(generation)) != generation or int(generation) > 18446744073709551615):
+            raise ValueError("generation must be a canonical u64 string")
+        tasks = [t for t in self.periodic_tasks()["tasks"] if t["session_id"] == session
+                 and t["client_request_id"] == request_id and (generation is None or t["generation"] == generation)]
+        if len(tasks) > 1:
+            raise ValueError("multiple tasks match; specify the original generation")
+        return tasks[0] if tasks else None
 
     def download(self, capture: str, destination: str):
         """Bounded download with no replacement of an existing destination."""

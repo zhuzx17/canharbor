@@ -33,13 +33,17 @@ async fn request_bytes(socket: &mut tokio::net::UnixStream) -> Vec<u8> {
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lost_tx_response_is_recovered_by_request_id_without_another_send() {
-    lost_response(false).await;
+    lost_response(0).await;
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sequence_stops_after_lost_response_and_preserves_request_lookup() {
-    lost_response(true).await;
+    lost_response(1).await;
 }
-async fn lost_response(sequence: bool) {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lost_task_start_response_is_recovered_without_another_admission() {
+    lost_response(2).await;
+}
+async fn lost_response(mode: u8) {
     let root = PathBuf::from("/tmp").join(format!("ch-recover-{}", uuid::Uuid::new_v4().simple()));
     let proxy_root =
         PathBuf::from("/tmp").join(format!("ch-proxy-{}", uuid::Uuid::new_v4().simple()));
@@ -61,7 +65,7 @@ async fn lost_response(sequence: bool) {
     let proxy = tokio::spawn(async move {
         let mut saved = Some(saved);
         let mut posts = 0;
-        for _ in 0..if sequence { 7 } else { 6 } {
+        for _ in 0..if mode == 1 { 7 } else { 6 } {
             let (mut client, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
                 .await
                 .unwrap()
@@ -96,13 +100,16 @@ async fn lost_response(sequence: bool) {
             .unwrap()
             .unwrap();
             assert!(response.len() < 1024 * 1024);
-            if method == "POST" && path.ends_with("/tx") {
+            if method == "POST" && (path.ends_with("/tx") || path.ends_with("/tasks")) {
                 posts += 1;
                 assert_eq!(posts, 1, "a lost response caused another TX request");
                 let request: Value = serde_json::from_slice(&bytes[end + 4..]).unwrap();
                 let body_start = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
                 let receipt: Value = serde_json::from_slice(&response[body_start..]).unwrap();
-                assert_eq!(receipt["state"], "submitted");
+                assert_eq!(
+                    receipt["state"],
+                    if mode == 2 { "starting" } else { "submitted" }
+                );
                 let generation = header
                     .lines()
                     .find_map(|line| {
@@ -133,7 +140,21 @@ async fn lost_response(sequence: bool) {
         Command::new(env!("CARGO_BIN_EXE_canharbor"))
             .arg("--runtime-dir")
             .arg(directory)
-            .args(if sequence {
+            .args(if mode == 2 {
+                vec![
+                    "task",
+                    "create",
+                    "--channel",
+                    "virtual:0",
+                    "--id",
+                    "123",
+                    "--count",
+                    "4",
+                    "--request-id",
+                    "lost-task",
+                    "--active",
+                ]
+            } else if mode == 1 {
                 vec![
                     "sequence",
                     "send",
@@ -170,7 +191,7 @@ async fn lost_response(sequence: bool) {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    if sequence {
+    if mode == 1 {
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(report["attempted"], 1);
         assert_eq!(report["unknown"], 1);
@@ -184,21 +205,36 @@ async fn lost_response(sequence: bool) {
     let session = receipt["session_id"].as_str().unwrap().to_owned();
     let message = String::from_utf8(output.stderr).unwrap();
     assert!(message.contains(&request));
-    assert!(message.contains("--request"));
+    if mode != 2 {
+        assert!(message.contains("--request"));
+    }
     let directory = proxy_root.clone();
     let output = tokio::task::spawn_blocking(move || {
         Command::new(env!("CARGO_BIN_EXE_canharbor"))
             .arg("--runtime-dir")
             .arg(directory)
-            .args([
-                "receipt",
-                "--session",
-                &session,
-                "--request",
-                &request,
-                "--generation",
-                &generation,
-            ])
+            .args(if mode == 2 {
+                vec![
+                    "task",
+                    "recover",
+                    "--session",
+                    &session,
+                    "--request",
+                    &request,
+                    "--generation",
+                    &generation,
+                ]
+            } else {
+                vec![
+                    "receipt",
+                    "--session",
+                    &session,
+                    "--request",
+                    &request,
+                    "--generation",
+                    &generation,
+                ]
+            })
             .output()
             .unwrap()
     })
@@ -209,10 +245,12 @@ async fn lost_response(sequence: bool) {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-        receipt
-    );
+    let recovered: Value = serde_json::from_slice(&output.stdout).unwrap();
+    if mode == 2 {
+        assert_eq!(recovered["id"], receipt["id"]);
+    } else {
+        assert_eq!(recovered, receipt);
+    }
     assert_eq!(proxy.await.unwrap(), 1);
     assert!(server.shutdown().await.failures.is_empty());
     let _ = std::fs::remove_dir_all(root);

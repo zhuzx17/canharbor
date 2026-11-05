@@ -36,7 +36,7 @@ for (const name of ["FrameInput", "Frame"])
 const output = await prettier.format(
   await compile(typeSchema, "CanHarborContract", {
     bannerComment:
-      "// SPDX-License-Identifier: AGPL-3.0-or-later\n// Generated from Rust wire DTOs. Run npm run api:generate --prefix web. Do not edit.",
+      "// SPDX-License-Identifier: AGPL-3.0-or-later\n// Generated from Rust wire DTOs. Run bun run --cwd web api:generate. Do not edit.",
     additionalProperties: false,
     unreachableDefinitions: true,
     unknownAny: true,
@@ -46,7 +46,7 @@ const output = await prettier.format(
 if (check) {
   if ((await readFile(typesFile, "utf8")) !== output)
     throw new Error(
-      "Generated TypeScript is stale; run npm run api:generate --prefix web",
+      "Generated TypeScript is stale; run bun run --cwd web api:generate",
     );
 } else await writeFile(typesFile, output);
 
@@ -113,8 +113,6 @@ for (const [file, output] of [
   const url = new URL(`../web/src/generated/${file}`, import.meta.url);
   if (check) {
     if ((await readFile(url, "utf8")) !== output)
-      throw new Error(
-        `${file} is stale; run npm run api:generate --prefix web`,
-      );
+      throw new Error(`${file} is stale; run bun run --cwd web api:generate`);
   } else await writeFile(url, output);
 }

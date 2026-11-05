@@ -2,8 +2,10 @@
 
 The authenticated local service exposes bounded periodic execution over an
 already running active session. It does not create a session, start a stopped
-controller, acquire/renew control, or reconnect a device. CLI task controls,
-Web controls and SDK helpers remain separate integration work.
+controller, acquire/renew control, or reconnect a device. CLI controls are
+documented in [periodic-cli.md](periodic-cli.md), browser
+controls in [periodic-web.md](periodic-web.md), and SDK helpers in
+[rust-client.md](rust-client.md) and the Python package README.
 
 ## Routes
 

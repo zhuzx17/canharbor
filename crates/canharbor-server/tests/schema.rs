@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 fn committed_schema_matches_the_actual_wire_dtos() {
     let expected = serde_json::to_value(dto::schema()).unwrap();
     let actual: Value = serde_json::from_str(include_str!("../../../api/schema.json")).unwrap();
-    assert_eq!(expected, actual, "run npm run api:generate --prefix web");
+    assert_eq!(expected, actual, "run bun run --cwd web api:generate");
 }
 #[test]
 fn shared_frames_agree_with_schema_deserialization_and_core_validation() {

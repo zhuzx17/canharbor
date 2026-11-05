@@ -63,6 +63,12 @@ pub fn exit_code(error: &(dyn Error + 'static)) -> i32 {
             Failure::Reported { code, .. } => *code,
         };
     }
+    if error.is::<canharbor_client::TaskStartUnknown>() {
+        return 7;
+    }
+    if error.is::<canharbor_client::AmbiguousTask>() {
+        return 5;
+    }
     if error.is::<canharbor_client::ServiceUnavailable>()
         || error.is::<canharbor_client::StreamUnavailable>()
     {
