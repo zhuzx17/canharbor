@@ -6,9 +6,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 [dependencies]
+canharbor-platform = { path = "../canharbor-platform" }
 futures-util.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"

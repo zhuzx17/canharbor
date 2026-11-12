@@ -10,6 +10,7 @@ use tokio::{
 /// A single-use submission bound to the current acquisition's execution permit.
 /// Preparing does no transmit I/O; stop, restart, expiry and shutdown revoke it.
 pub struct PreparedTransmission {
+    trace: Option<crate::measurement::SubmissionTrace>,
     session: String,
     channel: String,
     generation: u64,
@@ -27,9 +28,81 @@ impl TransmissionCancellation {
     }
 }
 impl PreparedTransmission {
+    pub fn observe(
+        &mut self,
+        origin: Instant,
+        preparation_started: Instant,
+    ) -> crate::measurement::SubmissionTrace {
+        let trace = crate::measurement::SubmissionTrace::new(origin, preparation_started);
+        self.trace = Some(trace.clone());
+        trace
+    }
+    pub fn bind_gate(&self, gate: &crate::control::ExecutionGate) -> Result<(), RuntimeError> {
+        self.execution.bind_gate(gate).map_err(Into::into)
+    }
+    /// Restrict a queued execution to an additional local deadline; never extends authority.
+    pub fn restrict_until(&self, deadline: std::time::Instant) {
+        self.execution.restrict_until(deadline);
+    }
     pub fn cancellation(&self) -> TransmissionCancellation {
         TransmissionCancellation(self.execution.clone())
     }
+}
+/// Reusable Classic-only authorization for one acquisition. Each frame still
+/// gets a fresh short-lived child checked by the existing backend submission.
+pub struct ClassicLane(PreparedTransmission);
+/// Data-only lane retaining the configuration boundary established at acquisition.
+pub struct DataLane {
+    template: PreparedTransmission,
+    fd: bool,
+}
+impl DataLane {
+    pub fn prepare(&self, frame: Frame) -> Result<PreparedTransmission, RuntimeError> {
+        if matches!(frame, Frame::ClassicRemote { .. })
+            || (matches!(frame, Frame::FdData { .. }) && !self.fd)
+        {
+            return Err(crate::Error::Unsupported.into());
+        }
+        frame.validate()?;
+        self.template.permit.check()?;
+        Ok(PreparedTransmission {
+            trace: None,
+            session: self.template.session.clone(),
+            channel: self.template.channel.clone(),
+            generation: self.template.generation,
+            frame,
+            permit: self.template.permit.clone(),
+            execution: self.template.permit.expiring_child(Duration::from_secs(1)),
+            runtime_fence: self.template.runtime_fence.clone(),
+        })
+    }
+}
+impl ClassicLane {
+    pub fn prepare(&self, frame: Frame) -> Result<PreparedTransmission, RuntimeError> {
+        frame.validate()?;
+        if !matches!(frame, Frame::ClassicData { .. }) {
+            return Err(crate::Error::Unsupported.into());
+        }
+        self.0.permit.check()?;
+        Ok(PreparedTransmission {
+            trace: None,
+            session: self.0.session.clone(),
+            channel: self.0.channel.clone(),
+            generation: self.0.generation,
+            frame,
+            permit: self.0.permit.clone(),
+            execution: self.0.permit.expiring_child(Duration::from_secs(1)),
+            runtime_fence: self.0.runtime_fence.clone(),
+        })
+    }
+}
+/// Independent low-overhead backend event receiver. A lag is incomplete evidence,
+/// never an assertion about where the physical frame was lost.
+pub struct MeasurementInput {
+    pub events: broadcast::Receiver<Arc<BackendEvent>>,
+    pub observation: Observation,
+    pub backend_generation: u64,
+    pub started: Instant,
 }
 const LEASE_TTL: Duration = Duration::from_secs(15);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,12 +224,48 @@ struct Inner {
     closing: bool,
     close_summary: Option<crate::CloseSummary>,
     sessions: BTreeMap<String, Session>,
-    next: u64,
-    next_generation: u64,
+}
+struct CatalogSession {
+    channel: String,
+    device: String,
+    control: Arc<Mutex<Inner>>,
+}
+struct CreationClaim {
+    id: String,
+    catalog: Arc<std::sync::Mutex<BTreeMap<String, CatalogSession>>>,
+    committed: bool,
+}
+impl Drop for CreationClaim {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.catalog.lock().unwrap().remove(&self.id);
+        }
+    }
+}
+/// Atomic reservation of backend-reported device identities across all owners.
+pub struct DeviceReservation {
+    token: u64,
+    ids: Vec<String>,
+    registry: Arc<std::sync::Mutex<BTreeMap<String, u64>>>,
+}
+impl Drop for DeviceReservation {
+    fn drop(&mut self) {
+        let mut map = self.registry.lock().unwrap();
+        for id in &self.ids {
+            if map.get(id) == Some(&self.token) {
+                map.remove(id);
+            }
+        }
+    }
 }
 pub struct Runtime {
+    stress_admission: Arc<tokio::sync::Semaphore>,
     backend: Arc<dyn Backend>,
-    inner: Arc<Mutex<Inner>>,
+    reservations: Arc<std::sync::Mutex<BTreeMap<String, u64>>>,
+    controls: std::sync::Mutex<BTreeMap<String, std::sync::Weak<Mutex<Inner>>>>,
+    catalog: Arc<std::sync::Mutex<BTreeMap<String, CatalogSession>>>,
+    next_session: std::sync::atomic::AtomicU64,
+    next_generation: std::sync::atomic::AtomicU64,
     myself: std::sync::Weak<Runtime>,
     started: Instant,
     next_acquisition: std::sync::atomic::AtomicU64,
@@ -167,20 +276,74 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(backend: Arc<dyn Backend>) -> Arc<Self> {
         Arc::new_cyclic(|myself| Self {
+            stress_admission: Arc::new(tokio::sync::Semaphore::new(1)),
             backend,
+            reservations: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             myself: myself.clone(),
-            inner: Arc::new(Mutex::new(Inner {
-                closing: false,
-                close_summary: None,
-                sessions: BTreeMap::new(),
-                next: 0,
-                next_generation: 0,
-            })),
+            controls: Default::default(),
+            catalog: Default::default(),
+            next_session: std::sync::atomic::AtomicU64::new(0),
+            next_generation: std::sync::atomic::AtomicU64::new(0),
             started: Instant::now(),
             next_acquisition: std::sync::atomic::AtomicU64::new(0),
             shutdown_fence: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             shutdown_completion: std::sync::Mutex::new(None),
         })
+    }
+    fn control_for_channel(
+        &self,
+        channel: &str,
+    ) -> Result<(String, Arc<Mutex<Inner>>), RuntimeError> {
+        if self
+            .shutdown_fence
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(RuntimeError::Closed);
+        }
+        let device = self.backend.capabilities(channel)?.device_id;
+        let mut controls = self.controls.lock().unwrap();
+        controls.retain(|_, v| v.strong_count() > 0);
+        let control = controls
+            .get(&device)
+            .and_then(std::sync::Weak::upgrade)
+            .unwrap_or_else(|| {
+                let c = Arc::new(Mutex::new(Inner {
+                    closing: false,
+                    close_summary: None,
+                    sessions: BTreeMap::new(),
+                }));
+                controls.insert(device.clone(), Arc::downgrade(&c));
+                c
+            });
+        Ok((device, control))
+    }
+    fn control_for_id(&self, id: &str) -> Result<Arc<Mutex<Inner>>, RuntimeError> {
+        self.catalog
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|s| s.control.clone())
+            .ok_or_else(|| {
+                if self
+                    .shutdown_fence
+                    .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    RuntimeError::Closed
+                } else {
+                    RuntimeError::NotFound
+                }
+            })
+    }
+    fn active_controls(&self) -> Vec<Arc<Mutex<Inner>>> {
+        self.controls
+            .lock()
+            .unwrap()
+            .values()
+            .filter_map(std::sync::Weak::upgrade)
+            .collect()
+    }
+    pub fn stress_admission(&self) -> Arc<tokio::sync::Semaphore> {
+        self.stress_admission.clone()
     }
     pub fn capabilities(&self, channel: &str) -> Result<crate::Capabilities, crate::Error> {
         self.backend.capabilities(channel)
@@ -203,7 +366,8 @@ impl Runtime {
         }
     }
     pub async fn sequence(&self, id: &str) -> Result<u64, RuntimeError> {
-        let inner = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let inner = control.lock().await;
         inner
             .sessions
             .get(id)
@@ -217,13 +381,15 @@ impl Runtime {
         id: &str,
         action: impl FnOnce(u64),
     ) -> Result<(), RuntimeError> {
-        let inner = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let inner = control.lock().await;
         let session = inner.sessions.get(id).ok_or(RuntimeError::NotFound)?;
         action(session.seq);
         Ok(())
     }
     pub async fn observe(&self, id: &str) -> Result<Observation, RuntimeError> {
-        let inner = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let inner = control.lock().await;
         if inner.closing
             || self
                 .shutdown_fence
@@ -281,24 +447,32 @@ impl Runtime {
         let _ = self.backend.stop(&s.view.channel).await;
     }
     pub async fn maintain(&self) {
-        let mut i = self.inner.lock().await;
-        for s in i.sessions.values_mut() {
-            self.expire(s).await;
-        }
-        let idle: Vec<_> = i
-            .sessions
-            .iter()
-            .filter(|(_, s)| s.lease.is_none() && s.idle_since.elapsed() >= Duration::from_secs(60))
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in idle {
-            let channel = i.sessions[&id].view.channel.clone();
-            if self.backend.close(&channel).await.is_ok() {
-                i.sessions.remove(&id);
-            } else if let Some(session) = i.sessions.get_mut(&id) {
-                self.fault(session, BackendFault::StopFailed).await;
-            }
-        }
+        futures_util::future::join_all(self.active_controls().into_iter().map(
+            |control| async move {
+                let mut i = control.lock().await;
+                for s in i.sessions.values_mut() {
+                    self.expire(s).await;
+                }
+                let idle: Vec<_> = i
+                    .sessions
+                    .iter()
+                    .filter(|(_, s)| {
+                        s.lease.is_none() && s.idle_since.elapsed() >= Duration::from_secs(60)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in idle {
+                    let channel = i.sessions[&id].view.channel.clone();
+                    if self.backend.close(&channel).await.is_ok() {
+                        i.sessions.remove(&id);
+                        self.catalog.lock().unwrap().remove(&id);
+                    } else if let Some(session) = i.sessions.get_mut(&id) {
+                        self.fault(session, BackendFault::StopFailed).await;
+                    }
+                }
+            },
+        ))
+        .await;
     }
     pub async fn create(
         self: &Arc<Self>,
@@ -314,17 +488,93 @@ impl Runtime {
         )
         .await
     }
+    pub fn cleanup_observation(&self, channel: &str) -> Option<crate::CloseSummary> {
+        self.backend.cleanup_observation(channel)
+    }
+    pub async fn reserve_devices(
+        &self,
+        channels: &[String],
+    ) -> Result<DeviceReservation, RuntimeError> {
+        let catalog = self.catalog.lock().unwrap();
+        if self
+            .shutdown_fence
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(RuntimeError::Closed);
+        }
+        let mut ids = channels
+            .iter()
+            .map(|c| self.backend.capabilities(c).map(|v| v.device_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        ids.sort();
+        ids.dedup();
+        if catalog.values().any(|s| ids.contains(&s.device)) {
+            return Err(RuntimeError::Busy);
+        }
+        let mut map = self.reservations.lock().unwrap();
+        if ids.iter().any(|id| map.contains_key(id)) {
+            return Err(RuntimeError::Busy);
+        }
+        let token = self
+            .next_acquisition
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        for id in &ids {
+            map.insert(id.clone(), token);
+        }
+        Ok(DeviceReservation {
+            token,
+            ids,
+            registry: self.reservations.clone(),
+        })
+    }
     pub async fn create_configured(
         self: &Arc<Self>,
         channel: &str,
         config: crate::Config,
     ) -> Result<SessionView, RuntimeError> {
+        self.create_reserved(channel, config, None).await
+    }
+    pub async fn create_reserved(
+        self: &Arc<Self>,
+        channel: &str,
+        config: crate::Config,
+        reservation: Option<&DeviceReservation>,
+    ) -> Result<SessionView, RuntimeError> {
+        let (device, control) = self.control_for_channel(channel)?;
+        let inner = control.clone().lock_owned().await;
+        let runtime = self.clone();
+        let channel = channel.to_string();
+        let token = reservation.map(|r| {
+            (
+                r.token,
+                r.ids.clone(),
+                Arc::ptr_eq(&r.registry, &self.reservations),
+            )
+        });
+        tokio::spawn(async move {
+            runtime
+                .create_locked(channel, config, token, device, control, inner)
+                .await
+        })
+        .await
+        .map_err(|_| RuntimeError::PreparationFailed)?
+    }
+    async fn create_locked(
+        self: Arc<Self>,
+        channel: String,
+        config: crate::Config,
+        reservation: Option<(u64, Vec<String>, bool)>,
+        device: String,
+        control: Arc<Mutex<Inner>>,
+        mut i: tokio::sync::OwnedMutexGuard<Inner>,
+    ) -> Result<SessionView, RuntimeError> {
+        let channel = channel.as_str();
         let mode = if config.listen_only {
             Mode::ListenOnly
         } else {
             Mode::Active
         };
-        let mut i = self.inner.lock().await;
         if i.closing
             || self
                 .shutdown_fence
@@ -332,18 +582,60 @@ impl Runtime {
         {
             return Err(RuntimeError::Closed);
         }
-
-        if i.sessions.values().any(|s| s.view.channel == channel) {
-            return Err(RuntimeError::Busy);
-        }
-        if i.sessions.len() >= 8 {
-            return Err(RuntimeError::Limit);
-        }
+        let id = {
+            let mut catalog = self.catalog.lock().unwrap();
+            if self
+                .shutdown_fence
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(RuntimeError::Closed);
+            }
+            let reservations = self.reservations.lock().unwrap();
+            if match &reservation {
+                Some((t, ids, same)) => {
+                    !*same || !ids.contains(&device) || reservations.get(&device) != Some(t)
+                }
+                None => reservations.contains_key(&device),
+            } {
+                return Err(RuntimeError::Busy);
+            }
+            if catalog.values().any(|s| s.channel == channel) {
+                return Err(RuntimeError::Busy);
+            }
+            if catalog.len() >= 8 {
+                return Err(RuntimeError::Limit);
+            }
+            let id = format!(
+                "s{}",
+                self.next_session
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    + 1
+            );
+            catalog.insert(
+                id.clone(),
+                CatalogSession {
+                    channel: channel.into(),
+                    device,
+                    control: control.clone(),
+                },
+            );
+            id
+        };
+        let mut claim = CreationClaim {
+            id: id.clone(),
+            catalog: self.catalog.clone(),
+            committed: false,
+        };
         self.backend.configure(channel, config).await?;
         let mut input = self.backend.subscribe(channel)?;
         let backend_generation = self.backend.check_channel(channel)?;
-        i.next += 1;
-        let id = format!("s{}", i.next);
+        if self
+            .shutdown_fence
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            let _ = self.backend.close(channel).await;
+            return Err(RuntimeError::Closed);
+        }
         let view = SessionView {
             id: id.clone(),
             channel: channel.into(),
@@ -369,7 +661,9 @@ impl Runtime {
                 acquisition: None,
             },
         );
-        let weak = Arc::downgrade(self);
+        claim.committed = true;
+        let weak = Arc::downgrade(&self);
+        let weak_control = Arc::downgrade(&control);
         tokio::spawn(async move {
             loop {
                 // A short poll timeout lets removed sessions release their bus receiver.
@@ -377,7 +671,10 @@ impl Runtime {
                     Ok(Ok(e)) => Some(e),
                     Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
                         if let Some(r) = weak.upgrade() {
-                            let mut i = r.inner.lock().await;
+                            let Some(control) = weak_control.upgrade() else {
+                                break;
+                            };
+                            let mut i = control.lock().await;
                             if let Some(s) = i.sessions.get_mut(&id) {
                                 r.fault(s, BackendFault::ReceiveOverflow).await;
                             }
@@ -386,7 +683,10 @@ impl Runtime {
                     }
                     Ok(Err(broadcast::error::RecvError::Closed)) => {
                         if let Some(r) = weak.upgrade() {
-                            let mut i = r.inner.lock().await;
+                            let Some(control) = weak_control.upgrade() else {
+                                break;
+                            };
+                            let mut i = control.lock().await;
                             if let Some(s) = i.sessions.get_mut(&id) {
                                 r.fault(s, BackendFault::Disconnected).await;
                             }
@@ -396,7 +696,10 @@ impl Runtime {
                     Err(_) => None,
                 };
                 let Some(r) = weak.upgrade() else { break };
-                let mut i = r.inner.lock().await;
+                let Some(control) = weak_control.upgrade() else {
+                    break;
+                };
+                let mut i = control.lock().await;
                 let Some(s) = i.sessions.get_mut(&id) else {
                     break;
                 };
@@ -466,32 +769,34 @@ impl Runtime {
     /// Observe cached session state without lease maintenance or backend I/O.
     /// Expired leases may still appear controlled/running until maintenance runs.
     pub async fn session_snapshot(&self) -> Vec<SessionView> {
-        self.inner
-            .lock()
-            .await
-            .sessions
-            .values()
-            .map(|s| s.view.clone())
-            .collect()
+        let mut views = vec![];
+        for control in self.active_controls() {
+            views.extend(
+                control
+                    .lock()
+                    .await
+                    .sessions
+                    .values()
+                    .map(|s| s.view.clone()),
+            );
+        }
+        views.sort_by(|a, b| a.id.cmp(&b.id));
+        views
     }
     pub async fn list(&self) -> Vec<SessionView> {
         self.maintain().await;
-        self.inner
-            .lock()
-            .await
-            .sessions
-            .values()
-            .map(|s| s.view.clone())
-            .collect()
+        self.session_snapshot().await
     }
     pub async fn get(&self, id: &str) -> Result<SessionView, RuntimeError> {
-        let mut i = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let mut i = control.lock().await;
         let s = i.sessions.get_mut(id).ok_or(RuntimeError::NotFound)?;
         self.expire(s).await;
         Ok(s.view.clone())
     }
     pub async fn acquire(&self, id: &str, owner: &str) -> Result<SessionView, RuntimeError> {
-        let mut i = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let mut i = control.lock().await;
         if i.closing
             || self
                 .shutdown_fence
@@ -505,8 +810,10 @@ impl Runtime {
         if s.lease.is_some() {
             return Err(RuntimeError::LeaseConflict);
         }
-        i.next_generation += 1;
-        let generation = i.next_generation;
+        let generation = self
+            .next_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
         let s = i.sessions.get_mut(id).unwrap();
         s.view.generation = generation;
         s.view.controller = Some(owner.into());
@@ -531,7 +838,8 @@ impl Runtime {
         Ok(())
     }
     pub async fn renew(&self, id: &str, owner: &str, g: u64) -> Result<SessionView, RuntimeError> {
-        let mut i = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let mut i = control.lock().await;
         if i.closing
             || self
                 .shutdown_fence
@@ -554,7 +862,8 @@ impl Runtime {
         g: u64,
         running: bool,
     ) -> Result<SessionView, RuntimeError> {
-        let mut i = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let mut i = control.lock().await;
         if i.closing
             || self
                 .shutdown_fence
@@ -631,7 +940,8 @@ impl Runtime {
         revision: u64,
         config: crate::Config,
     ) -> Result<SessionView, RuntimeError> {
-        let mut inner = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let mut inner = control.lock().await;
         if inner.closing
             || self
                 .shutdown_fence
@@ -668,7 +978,8 @@ impl Runtime {
         Ok(session.view.clone())
     }
     pub async fn release(&self, id: &str, owner: &str, g: u64) -> Result<(), RuntimeError> {
-        let mut i = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let mut i = control.lock().await;
         if i.closing
             || self
                 .shutdown_fence
@@ -694,7 +1005,28 @@ impl Runtime {
         Ok(())
     }
     pub async fn close(&self, id: &str, owner: &str, g: u64) -> Result<(), RuntimeError> {
-        let mut i = self.inner.lock().await;
+        self.close_checked(id, owner, g, None).await
+    }
+    /// Cleanup may only affect the acquisition it originally created. Epoch zero
+    /// denotes a session reserved but not started; a later start is protected too.
+    pub async fn close_at_epoch(
+        &self,
+        id: &str,
+        owner: &str,
+        g: u64,
+        epoch: u64,
+    ) -> Result<(), RuntimeError> {
+        self.close_checked(id, owner, g, Some(epoch)).await
+    }
+    async fn close_checked(
+        &self,
+        id: &str,
+        owner: &str,
+        g: u64,
+        epoch: Option<u64>,
+    ) -> Result<(), RuntimeError> {
+        let control = self.control_for_id(id)?;
+        let mut i = control.lock().await;
         if i.closing
             || self
                 .shutdown_fence
@@ -704,6 +1036,11 @@ impl Runtime {
         }
 
         let s = i.sessions.get_mut(id).ok_or(RuntimeError::NotFound)?;
+        if epoch.is_some_and(|expected| {
+            s.view.generation != g || s.acquisition.as_ref().map_or(0, |a| a.id) != expected
+        }) {
+            return Err(RuntimeError::RevisionConflict);
+        }
         self.authorize(s, owner, g).await?;
         if let Some(lease) = s.lease.as_ref() {
             lease.permit.revoke();
@@ -714,6 +1051,7 @@ impl Runtime {
         }
         Self::finish_acquisition(s, false);
         i.sessions.remove(id);
+        self.catalog.lock().unwrap().remove(id);
         Ok(())
     }
     pub async fn prepare_send(
@@ -726,7 +1064,7 @@ impl Runtime {
         frame.validate()?;
         // No work is detached while authorization is queued. Once the lock is
         // acquired, expiry/fault cleanup must outlive a cancelled waiter.
-        let inner = self.inner.clone().lock_owned().await;
+        let inner = self.control_for_id(id)?.lock_owned().await;
         let runtime = self.myself.upgrade().ok_or(RuntimeError::Closed)?;
         let id = id.to_owned();
         let owner = owner.to_owned();
@@ -771,6 +1109,7 @@ impl Runtime {
         let permit = s.lease.as_ref().unwrap().permit.clone();
         let execution = permit.expiring_child(Duration::from_secs(1));
         Ok(PreparedTransmission {
+            trace: None,
             session: id.into(),
             channel,
             generation: g,
@@ -778,6 +1117,63 @@ impl Runtime {
             permit,
             execution,
             runtime_fence: self.shutdown_fence.clone(),
+        })
+    }
+    pub async fn data_lane(
+        &self,
+        id: &str,
+        owner: &str,
+        generation: u64,
+        frame: Frame,
+    ) -> Result<DataLane, RuntimeError> {
+        if matches!(frame, Frame::ClassicRemote { .. }) {
+            return Err(crate::Error::Unsupported.into());
+        }
+        let template = self.prepare_send(id, owner, generation, frame).await?;
+        let control = self.control_for_id(id)?;
+        let inner = control.lock().await;
+        let session = inner.sessions.get(id).ok_or(RuntimeError::NotFound)?;
+        template.permit.check()?;
+        Ok(DataLane {
+            template,
+            fd: session.view.config.data_bitrate.is_some(),
+        })
+    }
+    pub async fn classic_lane(
+        &self,
+        id: &str,
+        owner: &str,
+        generation: u64,
+        frame: Frame,
+    ) -> Result<ClassicLane, RuntimeError> {
+        if !matches!(frame, Frame::ClassicData { .. }) {
+            return Err(crate::Error::Unsupported.into());
+        }
+        Ok(ClassicLane(
+            self.prepare_send(id, owner, generation, frame).await?,
+        ))
+    }
+    pub async fn measurement_input(&self, id: &str) -> Result<MeasurementInput, RuntimeError> {
+        let control = self.control_for_id(id)?;
+        let inner = control.lock().await;
+        let s = inner.sessions.get(id).ok_or(RuntimeError::NotFound)?;
+        if !s.view.running {
+            return Err(RuntimeError::InvalidState);
+        }
+        Ok(MeasurementInput {
+            events: self.backend.subscribe(&s.view.channel)?,
+            observation: Observation {
+                channel: s.view.channel.clone(),
+                inner: s
+                    .acquisition
+                    .as_ref()
+                    .ok_or(RuntimeError::InvalidState)?
+                    .clone(),
+                start_sequence: s.seq,
+                config: s.view.config,
+            },
+            backend_generation: s.backend_generation,
+            started: s.acquisition_started,
         })
     }
     pub async fn send(
@@ -790,11 +1186,15 @@ impl Runtime {
         let prepared = self.prepare_send(id, owner, g, frame).await?;
         self.submit_prepared(prepared).await
     }
+    pub fn source_evidence(&self, channel: &str) -> Vec<crate::measurement::SourceEvidence> {
+        self.backend.source_evidence(channel)
+    }
     pub async fn submit_prepared(
         &self,
         prepared: PreparedTransmission,
     ) -> Result<(), RuntimeError> {
         let PreparedTransmission {
+            trace,
             session: id,
             channel,
             generation: g,
@@ -808,9 +1208,18 @@ impl Runtime {
         }
         execution.check()?;
         let outcome = std::panic::AssertUnwindSafe(async {
-            self.backend
-                .submit(&channel, frame, execution.clone())
-                .await
+            if let Some(t) = &trace {
+                t.dispatched();
+            }
+            if let Some(t) = &trace {
+                self.backend
+                    .submit_observed(&channel, frame, execution.clone(), t.clone())
+                    .await
+            } else {
+                self.backend
+                    .submit(&channel, frame, execution.clone())
+                    .await
+            }
         })
         .catch_unwind()
         .await;
@@ -819,16 +1228,22 @@ impl Runtime {
             Err(_) => (Err(crate::Error::Fault(BackendFault::TransmitFailed)), true),
         };
         if let Err(error) = result {
-            let mut inner = self.inner.lock().await;
-            if let Some(session) = inner.sessions.get_mut(&id)
-                && session.view.generation == g
-                && session
-                    .lease
-                    .as_ref()
-                    .is_some_and(|lease| lease.permit.same_as(&permit))
-                && let crate::Error::Fault(fault) = &error
-            {
-                self.fault(session, *fault).await;
+            let control = self.control_for_id(&id).ok();
+            if let Some(control) = control {
+                let mut inner = control.lock().await;
+                if let Some(session) = inner.sessions.get_mut(&id)
+                    && session.view.generation == g
+                    && session
+                        .lease
+                        .as_ref()
+                        .is_some_and(|lease| lease.permit.same_as(&permit))
+                    && let crate::Error::Fault(fault) = &error
+                {
+                    self.fault(session, *fault).await;
+                }
+            }
+            if let Some(t) = &trace {
+                t.completed();
             }
             return Err(if panicked {
                 RuntimeError::SubmissionUnknown
@@ -836,13 +1251,17 @@ impl Runtime {
                 error.into()
             });
         }
+        if let Some(t) = &trace {
+            t.completed();
+        }
         Ok(())
     }
     pub async fn subscribe_all(
         &self,
         id: &str,
     ) -> Result<broadcast::Receiver<Notice>, RuntimeError> {
-        let inner = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let inner = control.lock().await;
         let session = inner.sessions.get(id).ok_or(RuntimeError::NotFound)?;
         session
             .notices
@@ -855,7 +1274,8 @@ impl Runtime {
             })
     }
     pub async fn subscribe(&self, id: &str) -> Result<broadcast::Receiver<Event>, RuntimeError> {
-        let i = self.inner.lock().await;
+        let control = self.control_for_id(id)?;
+        let i = control.lock().await;
         let s = i.sessions.get(id).ok_or(RuntimeError::NotFound)?;
         s.events.as_ref().map(|e| e.subscribe()).ok_or_else(|| {
             RuntimeError::Backend(crate::Error::Fault(
@@ -864,23 +1284,28 @@ impl Runtime {
         })
     }
     pub async fn revoke(&self, owner: &str) {
-        let mut i = self.inner.lock().await;
-        for s in i.sessions.values_mut() {
-            if s.lease.as_ref().is_some_and(|l| l.owner == owner) {
-                if let Some(lease) = s.lease.take() {
-                    lease.permit.revoke();
+        futures_util::future::join_all(self.active_controls().into_iter().map(
+            |control| async move {
+                let mut i = control.lock().await;
+                for s in i.sessions.values_mut() {
+                    if s.lease.as_ref().is_some_and(|l| l.owner == owner) {
+                        if let Some(lease) = s.lease.take() {
+                            lease.permit.revoke();
+                        }
+                        if self.backend.stop(&s.view.channel).await.is_err() {
+                            self.fault(s, BackendFault::StopFailed).await;
+                            continue;
+                        }
+                        Self::finish_acquisition(s, true);
+                        s.view.controller = None;
+                        s.view.running = false;
+                        s.idle_since = Instant::now();
+                        s.view.revision += 1;
+                    }
                 }
-                if self.backend.stop(&s.view.channel).await.is_err() {
-                    self.fault(s, BackendFault::StopFailed).await;
-                    continue;
-                }
-                Self::finish_acquisition(s, true);
-                s.view.controller = None;
-                s.view.running = false;
-                s.idle_since = Instant::now();
-                s.view.revision += 1;
-            }
-        }
+            },
+        ))
+        .await;
     }
     pub async fn shutdown(self: &Arc<Self>) -> crate::CloseSummary {
         self.shutdown_fence
@@ -913,8 +1338,8 @@ impl Runtime {
             }
         }
     }
-    async fn shutdown_owned(&self) -> crate::CloseSummary {
-        let mut inner = self.inner.lock().await;
+    async fn shutdown_control(&self, control: Arc<Mutex<Inner>>) -> crate::CloseSummary {
+        let mut inner = control.lock().await;
         if let Some(summary) = &inner.close_summary {
             return summary.clone();
         }
@@ -930,7 +1355,24 @@ impl Runtime {
                 self.fault(session, BackendFault::StopFailed).await;
             }
         }
+        for id in inner.sessions.keys() {
+            self.catalog.lock().unwrap().remove(id);
+        }
         inner.sessions.clear();
+        inner.close_summary = Some(summary.clone());
+        summary
+    }
+    async fn shutdown_owned(&self) -> crate::CloseSummary {
+        let mut summary = crate::CloseSummary::default();
+        for report in futures_util::future::join_all(
+            self.active_controls()
+                .into_iter()
+                .map(|c| self.shutdown_control(c)),
+        )
+        .await
+        {
+            summary.failures.extend(report.failures);
+        }
         match self.backend.shutdown_report().await {
             Ok(report) => {
                 summary.unknown_transmissions = report.unknown_transmissions;
@@ -938,7 +1380,7 @@ impl Runtime {
             }
             Err(error) => summary.failures.push(format!("backend close: {error}")),
         }
-        inner.close_summary = Some(summary.clone());
+
         summary
     }
 }

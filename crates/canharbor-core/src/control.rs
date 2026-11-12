@@ -3,11 +3,34 @@
 use crate::Error;
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
+/// One-way fence shared by all executions belonging to a single job.
+#[derive(Clone, Default)]
+pub struct ExecutionGate(Arc<GateState>);
+#[derive(Default)]
+struct GateState {
+    revoked: AtomicBool,
+    parent: Option<ExecutionGate>,
+}
+impl ExecutionGate {
+    pub fn child(&self) -> Self {
+        Self(Arc::new(GateState {
+            revoked: AtomicBool::new(false),
+            parent: Some(self.clone()),
+        }))
+    }
+    pub fn revoke(&self) {
+        self.0.revoked.store(true, Ordering::Release);
+    }
+    pub fn is_revoked(&self) -> bool {
+        self.0.revoked.load(Ordering::Acquire)
+            || self.0.parent.as_ref().is_some_and(Self::is_revoked)
+    }
+}
 #[derive(Clone)]
 pub struct Permit(Arc<Inner>);
 struct Inner {
@@ -16,11 +39,13 @@ struct Inner {
     until: Mutex<Instant>,
     parent: Option<Permit>,
     suspend: Option<crate::suspend::Sample>,
+    gate: OnceLock<ExecutionGate>,
 }
 impl Permit {
     pub(crate) fn new(ttl: Duration, shutdown: Arc<AtomicBool>) -> Self {
         Self(Arc::new(Inner {
             revoked: AtomicBool::new(false),
+            gate: OnceLock::new(),
             shutdown,
             until: Mutex::new(Instant::now() + ttl),
             parent: None,
@@ -32,6 +57,7 @@ impl Permit {
     pub(crate) fn replacement(&self, ttl: Duration) -> Self {
         Self(Arc::new(Inner {
             revoked: AtomicBool::new(false),
+            gate: OnceLock::new(),
             shutdown: self.0.shutdown.clone(),
             until: Mutex::new(Instant::now() + ttl),
             parent: None,
@@ -41,6 +67,7 @@ impl Permit {
     pub(crate) fn expiring_child(&self, ttl: Duration) -> Self {
         Self(Arc::new(Inner {
             revoked: AtomicBool::new(false),
+            gate: OnceLock::new(),
             shutdown: self.0.shutdown.clone(),
             until: Mutex::new(Instant::now() + ttl),
             parent: Some(self.clone()),
@@ -49,6 +76,12 @@ impl Permit {
     }
     pub(crate) fn same_as(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
+    }
+    pub(crate) fn bind_gate(&self, gate: &ExecutionGate) -> Result<(), Error> {
+        self.0
+            .gate
+            .set(gate.clone())
+            .map_err(|_| Error::InvalidState)
     }
     pub fn check(&self) -> Result<(), Error> {
         if let Some(parent) = &self.0.parent {
@@ -59,7 +92,8 @@ impl Permit {
         {
             self.revoke();
         }
-        if self.0.shutdown.load(Ordering::Acquire)
+        if self.0.gate.get().is_some_and(ExecutionGate::is_revoked)
+            || self.0.shutdown.load(Ordering::Acquire)
             || self.0.revoked.load(Ordering::Acquire)
             || Instant::now() >= *self.0.until.lock().unwrap()
         {
@@ -67,6 +101,10 @@ impl Permit {
         } else {
             Ok(())
         }
+    }
+    pub(crate) fn restrict_until(&self, deadline: Instant) {
+        let mut until = self.0.until.lock().unwrap();
+        *until = (*until).min(deadline);
     }
     pub(crate) fn renew(&self, ttl: Duration) {
         *self.0.until.lock().unwrap() = Instant::now() + ttl;

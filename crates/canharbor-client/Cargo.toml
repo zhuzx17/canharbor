@@ -6,6 +6,8 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 [dependencies]
+canharbor-platform = { path = "../canharbor-platform" }
+canharbor-ipc = { path = "../canharbor-ipc" }
 canharbor-api = { path = "../canharbor-api" }
 serde.workspace = true
 serde_json.workspace = true
@@ -18,3 +20,12 @@ futures-util.workspace = true
 canharbor-server.workspace = true
 canharbor-virtual.workspace = true
 canharbor-core.workspace = true
+
+[dependencies.hyper]
+version = "1"
+features = ["client", "http1"]
+[dependencies.hyper-util]
+version = "0.1"
+features = ["tokio"]
+[dependencies.http-body-util]
+version = "0.1"

@@ -125,7 +125,18 @@ async fn runtime_receives_raw_timestamps_and_serializes_transmit_stop_and_restar
     assert_eq!(event.frame.id().value(), 0x534);
     assert_eq!(event.metadata.stamp.raw_us, Some(0x123 * 1000));
     assert_eq!(event.metadata.stamp.extended_us, None);
-    runtime.send(&session, "owner", g, frame()).await.unwrap();
+    let start = tokio::time::Instant::now();
+    let mut prepared = runtime
+        .prepare_send(&session, "owner", g, frame())
+        .await
+        .unwrap();
+    let trace = prepared.observe(start, start);
+    runtime.submit_prepared(prepared).await.unwrap();
+    let p = trace.snapshot();
+    assert_eq!(p.scope, "device_worker_submit");
+    assert!(p.enqueued_ns.unwrap() <= p.worker_started_ns.unwrap());
+    assert!(p.call_started_ns.unwrap() <= p.call_completed_ns.unwrap());
+    assert!(p.completed_ns.unwrap() >= p.call_completed_ns.unwrap());
     assert!(
         events.try_recv().is_err(),
         "firmware acceptance must not fabricate a TX echo"

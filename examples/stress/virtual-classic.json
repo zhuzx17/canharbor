@@ -1,0 +1,12 @@
+{
+  "sender": "virtual:0",
+  "receivers": ["virtual:1"],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 2882400001,
+  "count": 100,
+  "fps": 50,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 100
+}

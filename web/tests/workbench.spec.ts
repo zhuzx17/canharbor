@@ -1,3 +1,4 @@
+import { nativeBinary, nativeRuntime } from "./native";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test, expect } from "@playwright/test";
 import { execFileSync, spawn } from "node:child_process";
@@ -5,9 +6,8 @@ import { resolve, join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { validateFrame } from "../src/api";
-const binary = resolve("../target/debug/canharbor");
-const runtime =
-  process.env.CANHARBOR_TEST_RUNTIME ?? "/tmp/canharbor-playwright";
+const binary = nativeBinary;
+const runtime = nativeRuntime;
 const cli = (...args: string[]) =>
   execFileSync(binary, ["--runtime-dir", runtime, ...args], {
     encoding: "utf8",
@@ -40,16 +40,19 @@ test("browser receives CLI traffic and CLI receives browser traffic", async ({
     .click();
   await page
     .getByRole("button", {
-      name: "Apply settings to selected session",
+      name: /Apply settings to/,
       exact: true,
     })
     .click();
-  await expect(page.getByRole("status")).toContainText("Configuration updated");
+  await expect(
+    page.getByRole("status", { name: "Operation result" }),
+  ).toContainText("Configuration updated");
   await page
     .getByRole("button", { name: "Start channel", exact: true })
     .click();
   await expect(page.getByText("running", { exact: true })).toBeVisible();
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Recordings", exact: true }).click();
   await page
     .getByRole("button", { name: "Start recording", exact: true })
     .click();
@@ -95,12 +98,19 @@ test("browser receives CLI traffic and CLI receives browser traffic", async ({
       "--active",
     ),
   ).toContain("virtual_bus_accepted");
+  await page.getByRole("button", { name: "Live traffic", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: "321", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("cell", { name: "AA BB", exact: true }),
   ).toBeVisible();
+  await page.getByLabel("Filter ID (hex)").fill("777");
+  await expect(
+    page.getByRole("cell", { name: "321", exact: true }),
+  ).toHaveCount(0);
+  await page.getByLabel("Filter ID (hex)").fill("");
+  await page.getByRole("button", { name: "Recordings", exact: true }).click();
   await page
     .getByRole("button", { name: "Stop recording", exact: true })
     .click();
@@ -119,12 +129,14 @@ test("browser receives CLI traffic and CLI receives browser traffic", async ({
       (record) => record.record === "event" && record.event.frame?.id === 0x321,
     ),
   ).toBe(true);
+  page.once("dialog", (dialog) => dialog.accept());
   await page
     .getByRole("button", { name: "Delete recording", exact: true })
     .click();
   await expect(
     page.getByRole("link", { name: "Download capture", exact: true }),
   ).toHaveCount(0);
+  await page.getByRole("button", { name: "Live traffic", exact: true }).click();
   expect(JSON.parse(cli("capture", "stop", nativeCapture.id)).complete).toBe(
     true,
   );
@@ -214,11 +226,13 @@ test("browser receives CLI traffic and CLI receives browser traffic", async ({
       .click();
     await expect(page.getByText("Live", { exact: true })).toBeVisible();
     await page.getByLabel("Identifier").fill("456");
-    await page.getByLabel("Payload").fill("DE AD BE EF");
+    await page
+      .getByRole("textbox", { name: "Payload HEX BYTES", exact: true })
+      .fill("DE AD BE EF");
     await page.getByRole("button", { name: "Send once", exact: false }).click();
-    await expect(page.getByRole("status")).toContainText(
-      "Submitted to virtual bus",
-    );
+    await expect(
+      page.getByRole("status", { name: "Operation result" }),
+    ).toContainText("Submitted to virtual bus");
     await expect.poll(() => output).toContain("DEADBEEF");
     expect(await exited, stderr).toBe(0);
     const received = JSON.parse(output.trim());
@@ -311,20 +325,32 @@ test("lost browser TX response is recovered after reload without resubmission", 
   await page
     .getByRole("button", { name: `Check result ${request}`, exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(original!.receipt);
+  await expect(
+    page.getByRole("status", { name: "Operation result" }),
+  ).toContainText(original!.receipt);
   await expect(history).toContainText("submitted");
   expect(posts).toBe(1);
-  // No frame, authorization token, or active control state is persisted.
+  // History retains bounded summaries, not payload, authorization or active control.
   const stored = await page.evaluate(() =>
     Object.entries(sessionStorage).filter(([k]) =>
       k.startsWith("canharbor:receipts:"),
     ),
   );
   expect(stored).toHaveLength(1);
-  expect(Object.keys(JSON.parse(stored[0][1])[0]).sort()).toEqual([
-    "generation",
-    "request",
-    "session",
-    "state",
-  ]);
+  const attempt = JSON.parse(stored[0][1])[0];
+  expect(attempt).toMatchObject({
+    session: expect.any(String),
+    generation: expect.any(String),
+    request: expect.any(String),
+    state: "submitted",
+  });
+  expect(attempt.context).toMatchObject({
+    kind: "classic_data",
+    id: 0x123,
+    bytes: 4,
+  });
+  for (const key of ["data_hex", "frame", "csrf_token", "auth", "lease"]) {
+    expect(attempt).not.toHaveProperty(key);
+    expect(attempt.context).not.toHaveProperty(key);
+  }
 });

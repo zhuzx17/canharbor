@@ -1,0 +1,16 @@
+{
+  "flow_value": "流 {{value}}",
+  "unnamed_flow": "未命名流",
+  "flow_name": "流名称",
+  "sender": "发送端",
+  "id_hex": "ID（十六进制）",
+  "identifier_width": "标识符位宽",
+  "11_bit": "11 位",
+  "29_bit": "29 位",
+  "frame_count": "帧数",
+  "rate_frames_s": "速率（帧/秒）",
+  "expected_receivers": "预期接收端",
+  "this_flow_uses": "此流使用 ",
+  "stages_edit_their_timing_in_advanced_json": " 个阶段。请在高级 JSON 中编辑时序。",
+  "remove_flow": "移除流"
+}

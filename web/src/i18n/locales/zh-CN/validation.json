@@ -1,0 +1,12 @@
+{
+  "missing_api_response_body": "API 响应缺少正文",
+  "api_response_exceeds_1_mib": "API 响应超过 1 MiB",
+  "unexpected_empty_api_response": "API 意外返回空响应",
+  "unexpected_api_response_body": "API 返回了非预期的响应正文",
+  "enter_a_hexadecimal_id_without_a_prefix": "请输入不带前缀的十六进制 ID。",
+  "id_exceeds_the_selected_width": "ID 超过所选位宽。",
+  "data_must_contain_complete_hexadecimal_bytes": "数据必须由完整的十六进制字节组成。",
+  "rtr_requires_an_empty_payload_and_dlc_0_8": "RTR 要求空载荷，且 DLC 为 0–8。",
+  "classic_can_allows_up_to_8_bytes_and_no": "经典 CAN 最多允许 8 字节，且不能启用 BRS。",
+  "use_an_exact_can_fd_wire_length_up_to": "请使用精确的 CAN FD 线上长度（最多 64 字节）。"
+}

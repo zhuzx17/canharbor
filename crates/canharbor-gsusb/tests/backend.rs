@@ -41,10 +41,18 @@ async fn runtime_configures_receives_transmits_stops_and_closes_usb_actor() {
         .running(&session.id, "owner", lease.generation, true)
         .await
         .unwrap();
-    runtime
-        .send(&session.id, "owner", lease.generation, frame())
+    let start = tokio::time::Instant::now();
+    let mut prepared = runtime
+        .prepare_send(&session.id, "owner", lease.generation, frame())
         .await
         .unwrap();
+    let trace = prepared.observe(start, start);
+    runtime.submit_prepared(prepared).await.unwrap();
+    let p = trace.snapshot();
+    assert_eq!(p.scope, "device_worker_submit");
+    assert!(p.enqueued_ns.unwrap() <= p.worker_started_ns.unwrap());
+    assert!(p.call_started_ns.unwrap() <= p.call_completed_ns.unwrap());
+    assert!(p.completed_ns.unwrap() >= p.call_completed_ns.unwrap());
     let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .unwrap()

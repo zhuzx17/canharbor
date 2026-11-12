@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+#![cfg(unix)]
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
@@ -20,7 +21,7 @@ impl Peer {
         count: usize,
         mut response: impl FnMut(&str) -> Option<(u16, Value)> + Send + 'static,
     ) -> Self {
-        let root = PathBuf::from("/tmp").join(format!("ch-exit-{}", uuid::Uuid::new_v4().simple()));
+        let root = test_temp_dir().join(format!("ch-exit-{}", uuid::Uuid::new_v4().simple()));
         std::fs::DirBuilder::new()
             .mode(0o700)
             .create(&root)
@@ -158,8 +159,7 @@ fn flow(path: &str) -> Option<(u16, Value)> {
 }
 #[test]
 fn input_and_unavailable_service_have_distinct_statuses() {
-    let directory =
-        PathBuf::from("/tmp").join(format!("ch-absent-{}", uuid::Uuid::new_v4().simple()));
+    let directory = test_temp_dir().join(format!("ch-absent-{}", uuid::Uuid::new_v4().simple()));
     let output = Command::new(env!("CARGO_BIN_EXE_canharbor"))
         .arg("--runtime-dir")
         .arg(&directory)
@@ -366,5 +366,13 @@ fn websocket_transport_loss_is_unavailable_but_invalid_response_is_backend_failu
             if malformed { 6 } else { 3 },
         );
         worker.join().unwrap();
+    }
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
     }
 }

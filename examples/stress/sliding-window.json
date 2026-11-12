@@ -1,0 +1,26 @@
+{
+  "sender": "virtual:0",
+  "receivers": [
+    "virtual:1"
+  ],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 2882400001,
+  "count": 10000,
+  "fps": 1000,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 100,
+  "tracking": {
+    "format": "sliding",
+    "capacity": 4096
+  },
+  "queues": {
+    "sample_every": 100
+  },
+  "evidence": {
+    "max_bytes": 268435456,
+    "segment_bytes": 4194304,
+    "sample_every": 100
+  }
+}

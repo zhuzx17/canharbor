@@ -1,0 +1,7 @@
+{
+  "could_not_read_recording_http_value_refresh_recordings_and": "无法读取录制（HTTP {{status}}）。请刷新录制并重新查看；此操作不会启动采集。",
+  "recording_response_has_no_file_body": "录制响应没有文件内容。",
+  "recording_exceeds_the_64_mib_service_download_limit_open": "录制超过 64 MiB 的服务下载上限。可在离线分析中打开已有本地文件（上限 1 GiB）。",
+  "recording_exceeds_the_64_mib_service_download_limit": "录制超过 64 MiB 的服务下载上限。",
+  "recording_download_was_interrupted_view_it_again_to_read": "录制下载中断。请重新查看以读取完整文件。"
+}

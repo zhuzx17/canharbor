@@ -4,16 +4,18 @@ use canharbor_core::{
     CanId, Frame,
     runtime::{Mode, Runtime},
 };
-use canharbor_server::local::{RunningServer, socket_path};
+use canharbor_server::local::RunningServer;
 use canharbor_virtual::{Fault, VirtualBus};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio_tungstenite::{
     client_async,
     tungstenite::{Message, client::IntoClientRequest},
 };
-async fn next_text(ws: &mut tokio_tungstenite::WebSocketStream<tokio::net::UnixStream>) -> Value {
+async fn next_text(
+    ws: &mut tokio_tungstenite::WebSocketStream<canharbor_ipc::StreamClient>,
+) -> Value {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             match ws.next().await.unwrap().unwrap() {
@@ -44,7 +46,12 @@ async fn injected_backend_faults_emit_valid_wire_messages_before_closing() {
             .running(&s.id, &owner, lease.generation, true)
             .await
             .unwrap();
-        let dir = PathBuf::from("/tmp").join(format!("ch-ws-{}", uuid::Uuid::new_v4().simple()));
+        let dir = std::path::PathBuf::from(if cfg!(windows) {
+            std::env::var_os("TEMP").expect("TEMP")
+        } else {
+            std::ffi::OsString::from("/tmp")
+        })
+        .join(format!("ch-ws-{}", uuid::Uuid::new_v4().simple()));
         let server = RunningServer::start(runtime.clone(), &dir, 0, false)
             .await
             .unwrap();
@@ -53,14 +60,9 @@ async fn injected_backend_faults_emit_valid_wire_messages_before_closing() {
             .unwrap();
         req.headers_mut()
             .insert("x-canharbor-client", client.parse().unwrap());
-        let (mut ws, _) = client_async(
-            req,
-            tokio::net::UnixStream::connect(socket_path(&dir))
-                .await
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+        let (mut ws, _) = client_async(req, canharbor_ipc::connect(&dir).await.unwrap())
+            .await
+            .unwrap();
         let subscribe = json!({"type":"subscribe","protocol_version":"1.0","filter":{}});
         common::validate("Subscribe", &subscribe);
         ws.send(Message::Text(subscribe.to_string().into()))

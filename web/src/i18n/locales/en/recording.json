@@ -1,0 +1,7 @@
+{
+  "could_not_read_recording_http_value_refresh_recordings_and": "Could not read recording (HTTP {{status}}). Refresh recordings and try viewing again; this does not start acquisition.",
+  "recording_response_has_no_file_body": "Recording response has no file body.",
+  "recording_exceeds_the_64_mib_service_download_limit_open": "Recording exceeds the 64 MiB service download limit. Open an existing local file in Offline analysis (up to 1 GiB).",
+  "recording_exceeds_the_64_mib_service_download_limit": "Recording exceeds the 64 MiB service download limit.",
+  "recording_download_was_interrupted_view_it_again_to_read": "Recording download was interrupted. View it again to read the complete file."
+}

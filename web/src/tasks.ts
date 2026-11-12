@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { decode } from "./contract";
 import type { PeriodicTask } from "./generated/api";
+import { LocalizedError } from "./i18n/messages";
 export type TaskAttempt = {
   session: string;
   request: string;
@@ -44,7 +45,7 @@ export function recoverTask(
       t.client_request_id === attempt.request,
   );
   if (matches.length > 1)
-    throw new Error("Multiple tasks match; no task was selected.");
+    throw new LocalizedError("tasks:multiple_tasks_match_no_task_was_selected");
   return matches[0];
 }
 export function validateTaskPlan(count: number, interval: number) {
@@ -57,9 +58,7 @@ export function validateTaskPlan(count: number, interval: number) {
     interval > 60000 ||
     (count - 1) * interval > 60000
   )
-    throw new Error(
-      "Use 1–6000 slots, an interval of 10–60000 ms, and a horizon of at most 60 seconds.",
-    );
+    throw new LocalizedError("tasks:use_1_6000_slots_an_interval_of_10_60000");
 }
 export function taskTerminal(task: PeriodicTask) {
   return !["starting", "running", "cancelling"].includes(task.state);

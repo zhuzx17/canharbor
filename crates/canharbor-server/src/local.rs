@@ -2,109 +2,92 @@
 use crate::{AppState, router};
 use canharbor_core::runtime::Runtime;
 use fs2::FileExt;
+#[cfg(unix)]
+use std::fs;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::File,
     io,
-    os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
-use tokio::{
-    net::{TcpListener, UnixListener, UnixStream},
-    sync::watch,
-    task::JoinHandle,
-};
+use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
+#[cfg(unix)]
 pub fn current_uid() -> u32 {
-    // SAFETY: geteuid has no preconditions or pointer arguments.
     unsafe { libc::geteuid() }
 }
 pub fn default_runtime_dir() -> PathBuf {
-    std::env::temp_dir().join(format!("canharbor-{}", current_uid()))
+    #[cfg(unix)]
+    {
+        std::env::temp_dir().join(format!("canharbor-{}", current_uid()))
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("CANHarbor")
+            .join("runtime")
+    }
 }
 pub fn socket_path(dir: &Path) -> PathBuf {
-    dir.join("service.sock")
+    canharbor_ipc::endpoint(dir).unwrap_or_else(|_| dir.join("service.sock"))
 }
 struct Files {
-    dir: PathBuf,
+    _dir: PathBuf,
     _lock: File,
 }
 impl Files {
     fn acquire(dir: &Path) -> io::Result<Self> {
-        match fs::create_dir(dir) {
-            Ok(()) => fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?,
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
-        let m = fs::symlink_metadata(dir)?;
-        if !m.is_dir() || m.uid() != current_uid() || m.mode() & 0o077 != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "runtime directory must be owned by this user with mode 0700",
-            ));
-        }
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(dir.join("service.lock"))?;
-        let lm = lock.metadata()?;
-        if !lm.is_file() || lm.uid() != current_uid() || lm.mode() & 0o077 != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "unsafe lock file",
-            ));
-        }
+        canharbor_platform::private::directory(dir)?;
+        let lock = canharbor_platform::private::open_lock(&dir.join("service.lock"))?;
         lock.try_lock_exclusive().map_err(|_| {
             io::Error::new(io::ErrorKind::AddrInUse, "CANHarbor is already running")
         })?;
-        let socket = socket_path(dir);
-        match fs::symlink_metadata(&socket) {
-            Ok(m) => {
-                if !m.file_type().is_socket() || m.uid() != current_uid() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "refusing to remove an unknown socket path",
-                    ));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{FileTypeExt, MetadataExt};
+            let socket = socket_path(dir);
+            match fs::symlink_metadata(&socket) {
+                Ok(m) => {
+                    if !m.file_type().is_socket() || m.uid() != current_uid() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "refusing to remove an unknown socket path",
+                        ));
+                    }
+                    fs::remove_file(socket)?
                 }
-                fs::remove_file(socket)?
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
             }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e),
         }
         Ok(Self {
-            dir: dir.into(),
+            _dir: dir.into(),
             _lock: lock,
         })
     }
 }
 impl Drop for Files {
     fn drop(&mut self) {
-        let _ = fs::remove_file(socket_path(&self.dir));
+        #[cfg(unix)]
+        let _ = fs::remove_file(socket_path(&self._dir));
     }
 }
-struct SameUser(UnixListener);
+struct SameUser(canharbor_ipc::Listener);
 impl axum::serve::Listener for SameUser {
-    type Io = UnixStream;
-    type Addr = tokio::net::unix::SocketAddr;
+    type Io = canharbor_ipc::StreamServer;
+    type Addr = ();
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
             match self.0.accept().await {
-                Ok((stream, addr))
-                    if stream.peer_cred().is_ok_and(|c| c.uid() == current_uid()) =>
-                {
-                    return (stream, addr);
-                }
-                Ok(_) => {}
+                Ok(s) => return (s, ()),
                 Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
             }
         }
     }
     fn local_addr(&self) -> io::Result<Self::Addr> {
-        self.0.local_addr()
+        Ok(())
     }
 }
 #[derive(Debug, Clone, Default)]
@@ -135,8 +118,7 @@ impl RunningServer {
             ));
         }
         let files = Files::acquire(dir)?;
-        let uds = UnixListener::bind(socket_path(dir))?;
-        fs::set_permissions(socket_path(dir), fs::Permissions::from_mode(0o600))?;
+        let uds = canharbor_ipc::Listener::bind(dir)?;
         let tcp = if web {
             Some(TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?)
         } else {
@@ -146,7 +128,13 @@ impl RunningServer {
             Some(listener) => format!("http://{}", listener.local_addr()?),
             None => "http://127.0.0.1:0".into(),
         };
-        let state = AppState::with_capture_dir(runtime, origin, web, Some(dir.join("captures")));
+        let state = AppState::with_preferences_file(
+            runtime,
+            origin,
+            web,
+            Some(dir.join("captures")),
+            crate::preferences::default_path(),
+        );
         let (stop, rx) = watch::channel(false);
         let mut tasks = Vec::new();
         let mut uds_stop = rx.clone();
@@ -186,6 +174,7 @@ impl RunningServer {
         })
     }
     pub async fn shutdown(mut self) -> ServiceCloseSummary {
+        self.state.stress.stop_all();
         self.state.periodic.begin_shutdown();
         self.state.runtime.fence_shutdown();
         let _ = self.stop.send(true);
@@ -194,7 +183,8 @@ impl RunningServer {
         // accounting, which can legitimately wait for an in-flight submission.
         let runtime = self.state.runtime.clone();
         let backend = tokio::spawn(async move { runtime.shutdown().await });
-        let unknown_tasks = self.state.periodic.shutdown().await;
+        let unknown_tasks =
+            self.state.periodic.shutdown().await + self.state.stress.shutdown().await;
         let backend = backend
             .await
             .unwrap_or_else(|error| canharbor_core::CloseSummary {
@@ -223,6 +213,7 @@ impl RunningServer {
 }
 impl Drop for RunningServer {
     fn drop(&mut self) {
+        self.state.stress.stop_all();
         self.state.periodic.begin_shutdown();
         self.state.runtime.fence_shutdown();
         let _ = self.stop.send(true);
@@ -232,9 +223,10 @@ impl Drop for RunningServer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
     #[test]
     fn rejects_symlink_and_foreign_socket_paths() {
         let base =

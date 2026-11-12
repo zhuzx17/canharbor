@@ -228,6 +228,9 @@ impl KvaserDriver {
     }
 }
 impl Driver for KvaserDriver {
+    fn source_evidence(&self) -> Vec<canharbor_core::measurement::SourceEvidence> {
+        vec![self.api.library.source_evidence()]
+    }
     fn descriptors(&self) -> Vec<Descriptor> {
         self.devices
             .values()

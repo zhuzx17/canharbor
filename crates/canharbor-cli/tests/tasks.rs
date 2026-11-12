@@ -28,7 +28,7 @@ async fn output(root: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 async fn setup() -> (PathBuf, RunningServer) {
-    let root = PathBuf::from("/tmp").join(format!("ch-task-cli-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-task-cli-{}", uuid::Uuid::new_v4().simple()));
     let server = RunningServer::start(
         Runtime::new(Arc::new(VirtualBus::default())),
         &root,
@@ -103,7 +103,7 @@ async fn create_query_and_recover_keep_results_without_restarting_transmission()
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn another_cli_can_cancel_and_sigint_reports_the_final_task_state() {
-    for signal in [false, true] {
+    for signal in [false, cfg!(unix)] {
         let (root, server) = setup().await;
         let mut child = command(
             &root,
@@ -140,6 +140,7 @@ async fn another_cli_can_cancel_and_sigint_reports_the_final_task_state() {
         assert!(uuid::Uuid::parse_str(&id).is_ok(), "{ready}");
         child.stderr = Some(lines.into_inner().into_inner());
         if signal {
+            #[cfg(unix)]
             assert_eq!(
                 unsafe { libc::kill(child.id().unwrap() as libc::pid_t, libc::SIGINT) },
                 0
@@ -152,9 +153,14 @@ async fn another_cli_can_cancel_and_sigint_reports_the_final_task_state() {
                     .success()
             );
         }
-        let out = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+        // Cancellation observation and session cleanup are separate bounded
+        // requests (up to 3s + the client's 10s request deadline). Match the
+        // complete-command budget instead of racing either phase at 10s.
+        let out = tokio::time::timeout(Duration::from_secs(25), child.wait_with_output())
             .await
-            .unwrap()
+            .unwrap_or_else(|error| {
+                panic!("task {id} did not exit after cancellation (signal={signal}): {error}")
+            })
             .unwrap();
         assert_eq!(
             out.status.code(),
@@ -224,13 +230,14 @@ async fn invalid_plans_and_missing_active_opt_in_do_not_open_devices() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn slow_setup_and_admission_responses_do_not_delay_original_lease_renewals() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (root, server) = setup().await;
     let proxy_root =
-        PathBuf::from("/tmp").join(format!("ch-task-slow-{}", uuid::Uuid::new_v4().simple()));
+        test_temp_dir().join(format!("ch-task-slow-{}", uuid::Uuid::new_v4().simple()));
     std::fs::create_dir(&proxy_root).unwrap();
     let listener = tokio::net::UnixListener::bind(proxy_root.join("service.sock")).unwrap();
     let held = Arc::new(AtomicBool::new(false));
@@ -349,4 +356,12 @@ async fn slow_setup_and_admission_responses_do_not_delay_original_lease_renewals
     assert!(server.shutdown().await.failures.is_empty());
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(proxy_root).unwrap();
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    }
 }

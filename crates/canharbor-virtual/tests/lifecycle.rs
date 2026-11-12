@@ -12,6 +12,8 @@ use std::sync::{
 use tokio::sync::{Notify, broadcast};
 struct Checked {
     bus: VirtualBus,
+    split_devices: bool,
+    hold_configure: AtomicBool,
     stops: AtomicUsize,
     closes: AtomicUsize,
     queued: Notify,
@@ -35,6 +37,8 @@ impl Default for Checked {
     fn default() -> Self {
         Self {
             bus: VirtualBus::default(),
+            split_devices: false,
+            hold_configure: AtomicBool::new(false),
             stops: AtomicUsize::new(0),
             closes: AtomicUsize::new(0),
             queued: Notify::new(),
@@ -57,6 +61,16 @@ impl Default for Checked {
     }
 }
 impl Backend for Checked {
+    fn capabilities(&self, ch: &str) -> Result<canharbor_core::Capabilities, Error> {
+        let mut c = self.bus.capabilities(ch)?;
+        if self.split_devices {
+            c.device_id = format!(
+                "fake-device-{}",
+                ch.rsplit(':').next().unwrap().parse::<u8>().unwrap() % 2
+            );
+        }
+        Ok(c)
+    }
     fn shutdown_report(&self) -> BackendFuture<'_, canharbor_core::CloseSummary> {
         self.report_calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
@@ -91,7 +105,13 @@ impl Backend for Checked {
         self.bus.transmit(ch, f)
     }
     fn configure<'a>(&'a self, ch: &'a str, c: Config) -> BackendFuture<'a, ()> {
-        self.bus.configure(ch, c)
+        Box::pin(async move {
+            if ch == "virtual:0" && self.hold_configure.load(Ordering::Acquire) {
+                self.queued.notify_one();
+                self.execute.notified().await;
+            }
+            self.bus.configure(ch, c).await
+        })
     }
     fn start<'a>(&'a self, ch: &'a str, p: Permit) -> BackendFuture<'a, ()> {
         if self.fail_start.load(Ordering::SeqCst) {
@@ -519,5 +539,122 @@ async fn queued_submission_deadline_is_not_extended_by_lease_renewal() {
             Error::ControlExpired
         ))
     ));
+    assert_eq!(backend.submissions.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn independent_device_controls_progress_while_same_device_channels_wait() {
+    use std::time::Duration;
+    let backend = Arc::new(Checked {
+        bus: VirtualBus::with_channel_count(256, 4),
+        split_devices: true,
+        ..Checked::default()
+    });
+    let runtime = Runtime::new(backend.clone());
+    let b = runtime.create("virtual:1", Mode::Active).await.unwrap();
+    let lease = runtime.acquire(&b.id, "B").await.unwrap();
+    runtime
+        .running(&b.id, "B", lease.generation, true)
+        .await
+        .unwrap();
+    backend.hold_configure.store(true, Ordering::Release);
+    let rt = runtime.clone();
+    let blocked = tokio::spawn(async move { rt.create("virtual:0", Mode::Active).await });
+    backend.queued.notified().await;
+    let rt = runtime.clone();
+    let mut same = tokio::spawn(async move { rt.create("virtual:2", Mode::ListenOnly).await });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), &mut same)
+            .await
+            .is_err()
+    );
+    tokio::time::timeout(Duration::from_secs(1), async {
+        runtime.renew(&b.id, "B", lease.generation).await.unwrap();
+        runtime.sequence(&b.id).await.unwrap();
+        let prepared = runtime
+            .prepare_send(
+                &b.id,
+                "B",
+                lease.generation,
+                Frame::classic(CanId::new(291, false).unwrap(), vec![1]).unwrap(),
+            )
+            .await
+            .unwrap();
+        runtime
+            .running(&b.id, "B", lease.generation, false)
+            .await
+            .unwrap();
+        assert!(runtime.submit_prepared(prepared).await.is_err());
+        runtime.close(&b.id, "B", lease.generation).await.unwrap();
+        assert!(
+            runtime
+                .reserve_devices(&["virtual:0".into(), "virtual:1".into()])
+                .await
+                .is_err()
+        );
+        let reserve = runtime
+            .reserve_devices(&["virtual:1".into()])
+            .await
+            .unwrap();
+        drop(reserve);
+    })
+    .await
+    .unwrap();
+    blocked.abort(); // The detached configure must still finish and remain owned by the runtime.
+    backend.execute.notify_one();
+    same.await.unwrap().unwrap();
+    runtime.shutdown().await;
+    assert_eq!(backend.submissions.load(Ordering::SeqCst), 0);
+}
+#[tokio::test]
+async fn device_shards_keep_global_session_limit_and_shutdown_fence() {
+    let backend = Arc::new(Checked {
+        bus: VirtualBus::with_channel_count(256, 16),
+        split_devices: true,
+        ..Checked::default()
+    });
+    let runtime = Runtime::new(backend);
+    let mut tasks = tokio::task::JoinSet::new();
+    for n in 0..16 {
+        let rt = runtime.clone();
+        tasks.spawn(async move { rt.create(&format!("virtual:{n}"), Mode::ListenOnly).await });
+    }
+    let mut results = vec![];
+    while let Some(r) = tasks.join_next().await {
+        results.push(r.unwrap());
+    }
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 8);
+    assert_eq!(runtime.list().await.len(), 8);
+    runtime.fence_shutdown();
+    assert!(runtime.create("virtual:15", Mode::Active).await.is_err());
+    runtime.shutdown().await;
+    assert!(runtime.list().await.is_empty());
+}
+
+#[tokio::test]
+async fn cancelled_creator_cannot_use_a_dropped_reservation_token() {
+    use std::{
+        future::{Future, poll_fn},
+        task::Poll,
+    };
+    let backend = Arc::new(Checked::default());
+    let rt = Runtime::new(backend.clone());
+    let reservation = rt.reserve_devices(&["virtual:0".into()]).await.unwrap();
+    let mut creating =
+        Box::pin(rt.create_reserved("virtual:0", Config::default(), Some(&reservation)));
+    poll_fn(|cx| {
+        assert!(creating.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    drop(creating);
+    drop(reservation);
+    tokio::task::yield_now().await;
+    assert!(rt.list().await.is_empty());
+    let fresh = rt.reserve_devices(&["virtual:0".into()]).await.unwrap();
+    rt.create_reserved("virtual:0", Config::default(), Some(&fresh))
+        .await
+        .unwrap();
+    rt.shutdown().await;
     assert_eq!(backend.submissions.load(Ordering::SeqCst), 0);
 }

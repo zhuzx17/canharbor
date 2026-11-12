@@ -1,10 +1,9 @@
-# M1: gs_usb protocol increment
+# gs_usb protocol engine
 
-This increment replaces the reserved crate with a transport-independent device
-engine. It starts M1; it does not complete the milestone's hardware, recording,
-or release acceptance criteria. The CLI and Web UI still expose only the virtual
-bus. No USB enumeration, interface claim, nusb transport, or hardware access is
-included in that initial increment. The subsequent [nusb transport](usb-transport.md) adds explicit discovery and I/O.
+The transport-independent engine validates gs_usb records and manages device
+state. Runtime hardware selection is documented in [hardware access](hardware-service.md);
+[nusb transport](usb-transport.md) describes discovery and I/O. Protocol tests do
+not establish real-adapter compatibility.
 
 ## Implemented boundary
 

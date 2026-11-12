@@ -116,15 +116,22 @@ async fn service() -> (RunningServer, Arc<Queued>, PathBuf, String, u64) {
         .running(&s.id, &format!("native:{CLIENT}"), a.generation, true)
         .await
         .unwrap();
-    let root =
-        PathBuf::from("/tmp").join(format!("ch-task-close-{}", uuid::Uuid::new_v4().simple()));
+    let root = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-task-close-{}", uuid::Uuid::new_v4().simple()));
     let server = RunningServer::start(runtime, &root, 0, false)
         .await
         .unwrap();
     (server, backend, root, s.id, a.generation)
 }
 async fn start(state: &Arc<AppState>, session: &str, g: u64) -> String {
-    request(state,"POST",&format!("/api/v1/sessions/{session}/tasks"),json!({"client_request_id":"shutdown-task","frame":{"kind":"classic_data","id":291,"data_hex":"00"},"interval_ms":10,"count":3}),Some(g)).await["id"].as_str().unwrap().to_owned()
+    // This fixture tests shutdown of an in-flight submission, not scheduling.
+    // A 10 ms window can expire before the executor runs on a loaded host,
+    // skipping every frame and leaving the backend-entry handshake unfulfilled.
+    request(state,"POST",&format!("/api/v1/sessions/{session}/tasks"),json!({"client_request_id":"shutdown-task","frame":{"kind":"classic_data","id":291,"data_hex":"00"},"interval_ms":60000,"count":1}),Some(g)).await["id"].as_str().unwrap().to_owned()
 }
 #[tokio::test]
 async fn shutdown_reports_unknown_tasks_separately_from_backend_pending_frames() {
@@ -132,7 +139,9 @@ async fn shutdown_reports_unknown_tasks_separately_from_backend_pending_frames()
     let state = server.state.clone();
     let mut traffic = backend.bus.subscribe("virtual:0").unwrap();
     let id = start(&state, &session, g).await;
-    backend.entered.notified().await;
+    tokio::time::timeout(Duration::from_secs(3), backend.entered.notified())
+        .await
+        .expect("shutdown fixture must reach the blocked backend submission");
     let report = tokio::time::timeout(Duration::from_secs(4), server.shutdown())
         .await
         .unwrap();
@@ -160,7 +169,9 @@ async fn dropping_a_service_fences_queued_task_io_before_async_cleanup() {
     let state = server.state.clone();
     let mut traffic = backend.bus.subscribe("virtual:0").unwrap();
     let id = start(&state, &session, g).await;
-    backend.entered.notified().await;
+    tokio::time::timeout(Duration::from_secs(3), backend.entered.notified())
+        .await
+        .expect("shutdown fixture must reach the blocked backend submission");
     drop(server);
     backend.release.notify_one();
     let until = tokio::time::Instant::now() + Duration::from_secs(2);
@@ -194,7 +205,9 @@ async fn a_terminal_unknown_task_is_still_included_in_service_shutdown() {
     let state = server.state.clone();
     let mut traffic = backend.bus.subscribe("virtual:0").unwrap();
     let id = start(&state, &session, g).await;
-    backend.entered.notified().await;
+    tokio::time::timeout(Duration::from_secs(3), backend.entered.notified())
+        .await
+        .expect("shutdown fixture must reach the blocked backend submission");
     let until = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
         let value = request(
@@ -234,7 +247,9 @@ async fn cancelling_service_shutdown_does_not_abandon_started_backend_cleanup() 
     let state = server.state.clone();
     let mut traffic = backend.bus.subscribe("virtual:0").unwrap();
     start(&state, &session, g).await;
-    backend.entered.notified().await;
+    tokio::time::timeout(Duration::from_secs(3), backend.entered.notified())
+        .await
+        .expect("shutdown fixture must reach the blocked backend submission");
     backend.hold_close.store(true, Ordering::Release);
     let closing = tokio::spawn(server.shutdown());
     tokio::time::timeout(Duration::from_secs(1), backend.close_entered.notified())

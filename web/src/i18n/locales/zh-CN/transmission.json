@@ -1,0 +1,23 @@
+{
+  "unconfirmed_transmissions": "未确认的发送",
+  "earlier_transmissions_have_unconfirmed_outcomes": "先前发送的结果尚未确认。",
+  "check_each_original_result_below_first_a_missing_or": "请先检查下方各原始结果。结果不存在或不可用，不能证明帧没有发出。查询不会发送帧。",
+  "i_understand_the_earlier_outcome_is_unconfirmed_allow_one": "我理解先前结果尚未确认，允许一次新的逻辑发送；它可能产生重复的物理作用。",
+  "use_check_result_for_each_unconfirmed_request_before_acknowledging": "允许新的发送前，请先对每个未确认请求使用“检查结果”。",
+  "send_once": "单次发送 ",
+  "send_once_creates_a_new_request_using_the_current": "单次发送会使用当前帧创建新请求。若只需查询先前请求，请使用“检查结果”。",
+  "submission_history": "提交历史",
+  "recent_requests_results_can_be_checked_without_acquiring_control": "最近请求 · 无需获取控制权即可查询结果。",
+  "session_value": "会话 {{session}}",
+  "earlier_request_time_and_frame_summary_unavailable": "先前请求 · 时间和帧摘要不可用",
+  "session": "会话 ",
+  "check_result_value": "检查结果 {{request}}",
+  "check_result": "检查结果",
+  "read_original_result_does_not_send": "读取原始结果 · 不发送",
+  "virtualSubmitted": "已提交至虚拟总线 · {{receipt}}",
+  "backendSubmitted": "已提交至后端；总线交付未确认 · {{receipt}}",
+  "submissionState": "提交状态：{{state}} · {{receipt}}",
+  "unknownResult": "发送结果未知。请勿自动重发。请求：{{request}}。使用“检查结果”查询，不会发送帧。",
+  "missingReceipt": "回执不可用：请求可能仍在处理、已经过期或属于先前服务实例。这不能证明帧未发出，请勿自动重发。",
+  "frameSummary": "{{kind}} · ID {{id}}（{{width}}）· {{bytes}} 字节{{brs}}"
+}

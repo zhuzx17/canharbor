@@ -1,0 +1,29 @@
+{
+  "macos-arm64": {
+    "extension": ".tar.gz",
+    "binary": "canharbor",
+    "launcher": "Start CANHarbor.command",
+    "host": [
+      "Darwin",
+      "arm64"
+    ]
+  },
+  "linux-x86_64": {
+    "extension": ".tar.gz",
+    "binary": "canharbor",
+    "launcher": "start-canharbor.sh",
+    "host": [
+      "Linux",
+      "x86_64"
+    ]
+  },
+  "windows-x86_64": {
+    "extension": ".zip",
+    "binary": "canharbor.exe",
+    "launcher": "start-canharbor.cmd",
+    "host": [
+      "Windows",
+      "AMD64"
+    ]
+  }
+}

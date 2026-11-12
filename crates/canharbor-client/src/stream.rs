@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Pull-based event subscription. No detached reader, control acquisition or reconnect.
 use crate::{ApiFailure, InvalidArgument, LocalClient, ResourceLimit, api, session_id};
+use canharbor_ipc::StreamClient;
 use futures_util::{SinkExt, StreamExt};
 use std::{error::Error, fmt, time::Duration};
-use tokio::net::UnixStream;
 use tokio_tungstenite::{
     WebSocketStream, client_async_with_config,
     tungstenite::{Message, client::IntoClientRequest, protocol::WebSocketConfig},
@@ -18,7 +18,7 @@ impl fmt::Display for StreamUnavailable {
 }
 impl Error for StreamUnavailable {}
 pub struct EventStream {
-    socket: Option<WebSocketStream<UnixStream>>,
+    socket: Option<WebSocketStream<StreamClient>>,
     epoch: Option<(String, String)>,
 }
 impl LocalClient {
@@ -40,7 +40,7 @@ impl LocalClient {
             )));
         }
         tokio::time::timeout(Duration::from_secs(10), async {
-            let stream = UnixStream::connect(self.dir.join("service.sock"))
+            let stream = canharbor_ipc::connect(&self.dir)
                 .await
                 .map_err(|e| StreamUnavailable(e.to_string()))?;
             let mut request =

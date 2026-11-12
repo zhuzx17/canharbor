@@ -1,0 +1,29 @@
+{
+  "sender": "virtual:0",
+  "receivers": [
+    "virtual:1"
+  ],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 1337,
+  "count": 0,
+  "fps": 0,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "adaptive": {
+    "rates": [
+      100,
+      500,
+      1000
+    ],
+    "exploration_seconds": 5,
+    "measurement_seconds": 30,
+    "min_observed_ppm": 950000
+  },
+  "evidence": {
+    "sample_every": 100,
+    "max_bytes": 268435456,
+    "segment_bytes": 4194304
+  }
+}

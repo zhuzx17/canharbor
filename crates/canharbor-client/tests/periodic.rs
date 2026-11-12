@@ -22,8 +22,12 @@ fn plan(id: &str, count: u32) -> api::PeriodicRequest {
 }
 #[tokio::test]
 async fn typed_tasks_keep_explicit_control_and_read_only_recovery() {
-    let root = std::path::PathBuf::from("/tmp")
-        .join(format!("ch-task-sdk-{}", uuid::Uuid::new_v4().simple()));
+    let root = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-task-sdk-{}", uuid::Uuid::new_v4().simple()));
     let server = RunningServer::start(
         Runtime::new(Arc::new(VirtualBus::default())),
         &root,
@@ -131,13 +135,17 @@ async fn typed_tasks_keep_explicit_control_and_read_only_recovery() {
 #[tokio::test]
 async fn lost_start_response_retains_identity_and_recovery_never_posts() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let root = std::path::PathBuf::from("/tmp")
-        .join(format!("ch-task-loss-{}", uuid::Uuid::new_v4().simple()));
-    std::fs::create_dir(&root).unwrap();
-    let listener = tokio::net::UnixListener::bind(root.join("service.sock")).unwrap();
+    let root = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-task-loss-{}", uuid::Uuid::new_v4().simple()));
+    canharbor_platform::private::directory(&root).unwrap();
+    let mut listener = canharbor_ipc::Listener::bind(&root).unwrap();
     let service = tokio::spawn(async move {
         for index in 0..2 {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut socket = listener.accept().await.unwrap();
             let mut bytes = vec![];
             let mut part = [0; 4096];
             loop {

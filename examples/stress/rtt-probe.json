@@ -1,0 +1,46 @@
+{
+  "sender": "virtual:0",
+  "receivers": [
+    "virtual:1"
+  ],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 2882400005,
+  "count": 100,
+  "fps": 100,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "traffic": {
+    "format": "fd_v1",
+    "data_bitrate": 2000000,
+    "stream": 1,
+    "epoch": 1,
+    "seed": 42,
+    "variants": [
+      {
+        "length": 32,
+        "brs": false
+      },
+      {
+        "length": 48,
+        "brs": true
+      },
+      {
+        "length": 64,
+        "brs": true
+      }
+    ]
+  },
+  "evidence": {
+    "max_bytes": 67108864,
+    "segment_bytes": 4194304,
+    "sample_every": 1
+  },
+  "rtt": {
+    "role": "probe",
+    "response_can_id": 292,
+    "timeout_ms": 100,
+    "max_inflight": 128
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "unconfirmed_transmissions": "Unconfirmed transmissions",
+  "earlier_transmissions_have_unconfirmed_outcomes": "Earlier transmissions have unconfirmed outcomes.",
+  "check_each_original_result_below_first_a_missing_or": "Check each original result below first. A missing or unavailable result does not prove that no frame was sent. Querying never sends a frame.",
+  "i_understand_the_earlier_outcome_is_unconfirmed_allow_one": "I understand the earlier outcome is unconfirmed. Allow one new logical transmission, which may duplicate a physical effect.",
+  "use_check_result_for_each_unconfirmed_request_before_acknowledging": "Use Check result for each unconfirmed request before acknowledging a new transmission.",
+  "send_once": "Send once ",
+  "send_once_creates_a_new_request_using_the_current": "Send once creates a new request using the current frame. To inspect an earlier request without sending, use Check result.",
+  "submission_history": "Submission history",
+  "recent_requests_results_can_be_checked_without_acquiring_control": "Recent requests · results can be checked without acquiring control.",
+  "session_value": "Session {{session}}",
+  "earlier_request_time_and_frame_summary_unavailable": "Earlier request · time and frame summary unavailable",
+  "session": "Session ",
+  "check_result_value": "Check result {{request}}",
+  "check_result": "Check result",
+  "read_original_result_does_not_send": "Read original result · does not send",
+  "virtualSubmitted": "Submitted to virtual bus · {{receipt}}",
+  "backendSubmitted": "Submitted to backend; bus delivery unconfirmed · {{receipt}}",
+  "submissionState": "Submission {{state}} · {{receipt}}",
+  "unknownResult": "Transmission outcome unknown. Do not resend automatically. Request: {{request}}. Use Check result to query without sending.",
+  "missingReceipt": "Receipt unavailable: it may be pending, expired, or from an earlier service instance. This does not prove that no frame was sent. Do not resend automatically.",
+  "frameSummary": "{{kind}} · ID {{id}} ({{width}}) · {{bytes}} bytes{{brs}}"
+}

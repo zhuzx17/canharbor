@@ -1,0 +1,787 @@
+{
+  "format": "canharbor-virtual-throughput-v1",
+  "created_utc": "2026-11-08T02:27:16Z",
+  "thresholds": {
+    "lane_fps": 40000,
+    "recorded_fps": 10000,
+    "recorded_submitted": 10000,
+    "skipped": 0
+  },
+  "scope": "virtual backend only; wall gates are not replaced by CPU-normalized rates; compilation excluded",
+  "binaries": {
+    "current": {
+      "lane": {
+        "path": "/private/tmp/ch-b6p/after-verifier",
+        "sha256": "19895a2b246b36462494c2afc82254c1994b72e51e3c25f49bc6f372c1b5acb2"
+      },
+      "verifier": {
+        "path": "/private/tmp/ch-b6p/after-verifier",
+        "sha256": "19895a2b246b36462494c2afc82254c1994b72e51e3c25f49bc6f372c1b5acb2"
+      },
+      "recorded": {
+        "path": "/private/tmp/ch-b6p/after-recorded",
+        "sha256": "eb3fac55b0de332ca807d6a1aa2fffd17161666d2609859b6a2547609b55e517"
+      }
+    },
+    "baseline": {
+      "lane": {
+        "path": "/private/tmp/ch-b6p/before-verifier",
+        "sha256": "1afe453126b797730c41483fcfb917b59c755a9ac2c46a29f8a001bffc1f5e30"
+      },
+      "verifier": {
+        "path": "/private/tmp/ch-b6p/before-verifier",
+        "sha256": "1afe453126b797730c41483fcfb917b59c755a9ac2c46a29f8a001bffc1f5e30"
+      },
+      "recorded": {
+        "path": "/private/tmp/ch-b6p/before-recorded",
+        "sha256": "cefea8abbf02c22397bdaf40fb16646dd41cbec7394f13bbb2b651055ca34707"
+      }
+    }
+  },
+  "runs": [
+    {
+      "round": 1,
+      "variant": "current",
+      "case": "lane",
+      "exit_code": 0,
+      "wall_seconds": 0.5090737920254469,
+      "cpu_seconds": 0.37697699999999995,
+      "cpu_over_wall": 0.7405154339219178,
+      "measurements": [],
+      "stdout_stderr": "\nrunning 1 test\ntest p2_tests::controlled_virtual_lane_throughput ... P2 controlled virtual path: submitted=40000 peer_rx=40000 elapsed_seconds=0.489873 fps=81654 budget_max_fps=20000; excludes physical wire timing\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.50s\n\n",
+      "complete_measurements": true,
+      "lane_seconds": 0.489873,
+      "lane_fps": 81654
+    },
+    {
+      "round": 1,
+      "variant": "baseline",
+      "case": "lane",
+      "exit_code": 0,
+      "wall_seconds": 0.4253024160861969,
+      "cpu_seconds": 0.344899,
+      "cpu_over_wall": 0.810950013343208,
+      "measurements": [],
+      "stdout_stderr": "\nrunning 1 test\ntest p2_tests::controlled_virtual_lane_throughput ... P2 controlled virtual path: submitted=40000 peer_rx=40000 elapsed_seconds=0.402752 fps=99317 budget_max_fps=20000; excludes physical wire timing\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.42s\n\n",
+      "complete_measurements": true,
+      "lane_seconds": 0.402752,
+      "lane_fps": 99317
+    },
+    {
+      "round": 1,
+      "variant": "current",
+      "case": "verifier",
+      "exit_code": 0,
+      "wall_seconds": 1.5383412919472903,
+      "cpu_seconds": 1.442261,
+      "cpu_over_wall": 0.9375429285749275,
+      "measurements": [
+        {
+          "cpu_seconds": 0.335579,
+          "fps": 1839760.45743919,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 1,
+          "wall_seconds": 0.347871375
+        },
+        {
+          "cpu_seconds": 0.36275500000000005,
+          "fps": 1620983.801460749,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 1,
+          "wall_seconds": 0.394821959
+        },
+        {
+          "cpu_seconds": 0.337503,
+          "fps": 1845455.3679142355,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 64,
+          "wall_seconds": 0.346797875
+        },
+        {
+          "cpu_seconds": 0.40106200000000003,
+          "fps": 1453734.6109386072,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 64,
+          "wall_seconds": 0.440245417
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest tracking::performance::verifier_throughput_matrix ... VERIFIER {\"cpu_seconds\":0.335579,\"fps\":1839760.45743919,\"frames\":640000,\"sliding\":false,\"stages\":1,\"wall_seconds\":0.347871375}\nVERIFIER {\"cpu_seconds\":0.36275500000000005,\"fps\":1620983.801460749,\"frames\":640000,\"sliding\":true,\"stages\":1,\"wall_seconds\":0.394821959}\nVERIFIER {\"cpu_seconds\":0.337503,\"fps\":1845455.3679142355,\"frames\":640000,\"sliding\":false,\"stages\":64,\"wall_seconds\":0.346797875}\nVERIFIER {\"cpu_seconds\":0.40106200000000003,\"fps\":1453734.6109386072,\"frames\":640000,\"sliding\":true,\"stages\":64,\"wall_seconds\":0.440245417}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 1.53s\n\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 1,
+      "variant": "baseline",
+      "case": "verifier",
+      "exit_code": 0,
+      "wall_seconds": 1.936177666997537,
+      "cpu_seconds": 1.7356220000000002,
+      "cpu_over_wall": 0.8964167026528398,
+      "measurements": [
+        {
+          "cpu_seconds": 0.37437800000000004,
+          "fps": 1563126.0212860934,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 1,
+          "wall_seconds": 0.409435958
+        },
+        {
+          "cpu_seconds": 0.38111,
+          "fps": 1331260.865246759,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 1,
+          "wall_seconds": 0.48074725
+        },
+        {
+          "cpu_seconds": 0.48759300000000017,
+          "fps": 1221150.9061082827,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 64,
+          "wall_seconds": 0.52409575
+        },
+        {
+          "cpu_seconds": 0.485876,
+          "fps": 1250983.539384624,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 64,
+          "wall_seconds": 0.511597459
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest tracking::performance::verifier_throughput_matrix ... VERIFIER {\"cpu_seconds\":0.37437800000000004,\"fps\":1563126.0212860934,\"frames\":640000,\"sliding\":false,\"stages\":1,\"wall_seconds\":0.409435958}\nVERIFIER {\"cpu_seconds\":0.38111,\"fps\":1331260.865246759,\"frames\":640000,\"sliding\":true,\"stages\":1,\"wall_seconds\":0.48074725}\nVERIFIER {\"cpu_seconds\":0.48759300000000017,\"fps\":1221150.9061082827,\"frames\":640000,\"sliding\":false,\"stages\":64,\"wall_seconds\":0.52409575}\nVERIFIER {\"cpu_seconds\":0.485876,\"fps\":1250983.539384624,\"frames\":640000,\"sliding\":true,\"stages\":64,\"wall_seconds\":0.511597459}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 1.93s\n\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 1,
+      "variant": "current",
+      "case": "recorded",
+      "exit_code": 101,
+      "wall_seconds": 5.0852434588596225,
+      "cpu_seconds": 1.7333049999999997,
+      "cpu_over_wall": 0.340849954190531,
+      "measurements": [
+        {
+          "cpu_seconds": 0.7593949999999999,
+          "evidence_bytes": 91577,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.612032125
+        },
+        {
+          "cpu_seconds": 0.3138280000000001,
+          "evidence_bytes": 121191,
+          "peer_rx": 9414,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 586,
+          "sliding": true,
+          "submitted": 9414,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.154694541
+        },
+        {
+          "cpu_seconds": 0.3236199999999998,
+          "evidence_bytes": 102910,
+          "peer_rx": 9816,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 184,
+          "sliding": false,
+          "submitted": 9816,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.135028125
+        },
+        {
+          "cpu_seconds": 0.32269800000000015,
+          "evidence_bytes": 110803,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": true,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.162792709
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest recorded_high_rate_virtual_run_has_no_unreported_rx_loss ... THROUGHPUT {\"cpu_seconds\":0.7593949999999999,\"evidence_bytes\":91577,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.612032125}\nTHROUGHPUT {\"cpu_seconds\":0.3138280000000001,\"evidence_bytes\":121191,\"peer_rx\":9414,\"queues\":true,\"recovery\":\"verified\",\"skipped\":586,\"sliding\":true,\"submitted\":9414,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.154694541}\nTHROUGHPUT {\"cpu_seconds\":0.3236199999999998,\"evidence_bytes\":102910,\"peer_rx\":9816,\"queues\":true,\"recovery\":\"verified\",\"skipped\":184,\"sliding\":false,\"submitted\":9816,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.135028125}\nTHROUGHPUT {\"cpu_seconds\":0.32269800000000015,\"evidence_bytes\":110803,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":true,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.162792709}\nFAILED\n\nfailures:\n\nfailures:\n    recorded_high_rate_virtual_run_has_no_unreported_rx_loss\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 5.07s\n\n\nthread 'recorded_high_rate_virtual_run_has_no_unreported_rx_loss' (159183216) panicked at crates/canharbor-server/tests/stress.rs:433:5:\nunchanged 10000 fps recorded gate unmet: [(true, true), (false, true)]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 1,
+      "variant": "baseline",
+      "case": "recorded",
+      "exit_code": 101,
+      "wall_seconds": 5.122782834107056,
+      "cpu_seconds": 1.7146490000000005,
+      "cpu_over_wall": 0.3347104602178355,
+      "measurements": [
+        {
+          "cpu_seconds": 0.746002,
+          "evidence_bytes": 91564,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.6855769999999999
+        },
+        {
+          "cpu_seconds": 0.3172769999999999,
+          "evidence_bytes": 127115,
+          "peer_rx": 10000,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": true,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.1319673749999999
+        },
+        {
+          "cpu_seconds": 0.31737400000000004,
+          "evidence_bytes": 102632,
+          "peer_rx": 9800,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 200,
+          "sliding": false,
+          "submitted": 9800,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.142234959
+        },
+        {
+          "cpu_seconds": 0.31498500000000007,
+          "evidence_bytes": 109801,
+          "peer_rx": 9880,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 120,
+          "sliding": true,
+          "submitted": 9880,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.128333792
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest recorded_high_rate_virtual_run_has_no_unreported_rx_loss ... THROUGHPUT {\"cpu_seconds\":0.746002,\"evidence_bytes\":91564,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.6855769999999999}\nTHROUGHPUT {\"cpu_seconds\":0.3172769999999999,\"evidence_bytes\":127115,\"peer_rx\":10000,\"queues\":true,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":true,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.1319673749999999}\nTHROUGHPUT {\"cpu_seconds\":0.31737400000000004,\"evidence_bytes\":102632,\"peer_rx\":9800,\"queues\":true,\"recovery\":\"verified\",\"skipped\":200,\"sliding\":false,\"submitted\":9800,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.142234959}\nTHROUGHPUT {\"cpu_seconds\":0.31498500000000007,\"evidence_bytes\":109801,\"peer_rx\":9880,\"queues\":false,\"recovery\":\"verified\",\"skipped\":120,\"sliding\":true,\"submitted\":9880,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.128333792}\nFAILED\n\nfailures:\n\nfailures:\n    recorded_high_rate_virtual_run_has_no_unreported_rx_loss\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 5.10s\n\n\nthread 'recorded_high_rate_virtual_run_has_no_unreported_rx_loss' (159183791) panicked at crates/canharbor-server/tests/stress.rs:433:5:\nunchanged 10000 fps recorded gate unmet: [(false, true), (true, false)]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 2,
+      "variant": "baseline",
+      "case": "lane",
+      "exit_code": 0,
+      "wall_seconds": 0.40092295804060996,
+      "cpu_seconds": 0.32237899999999975,
+      "cpu_over_wall": 0.8040921417309946,
+      "measurements": [],
+      "stdout_stderr": "\nrunning 1 test\ntest p2_tests::controlled_virtual_lane_throughput ... P2 controlled virtual path: submitted=40000 peer_rx=40000 elapsed_seconds=0.358209 fps=111667 budget_max_fps=20000; excludes physical wire timing\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.38s\n\n",
+      "complete_measurements": true,
+      "lane_seconds": 0.358209,
+      "lane_fps": 111667
+    },
+    {
+      "round": 2,
+      "variant": "current",
+      "case": "lane",
+      "exit_code": 0,
+      "wall_seconds": 0.5779794999398291,
+      "cpu_seconds": 0.35013200000000033,
+      "cpu_over_wall": 0.6057861914418262,
+      "measurements": [],
+      "stdout_stderr": "\nrunning 1 test\ntest p2_tests::controlled_virtual_lane_throughput ... P2 controlled virtual path: submitted=40000 peer_rx=40000 elapsed_seconds=0.535940 fps=74635 budget_max_fps=20000; excludes physical wire timing\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.56s\n\n",
+      "complete_measurements": true,
+      "lane_seconds": 0.53594,
+      "lane_fps": 74635
+    },
+    {
+      "round": 2,
+      "variant": "baseline",
+      "case": "verifier",
+      "exit_code": 0,
+      "wall_seconds": 4.274139291839674,
+      "cpu_seconds": 2.0032619999999994,
+      "cpu_over_wall": 0.46869366279772223,
+      "measurements": [
+        {
+          "cpu_seconds": 0.40219099999999997,
+          "fps": 1268498.2096089234,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 1,
+          "wall_seconds": 0.504533625
+        },
+        {
+          "cpu_seconds": 0.425783,
+          "fps": 1050776.0139300195,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 1,
+          "wall_seconds": 0.609073667
+        },
+        {
+          "cpu_seconds": 0.5600790000000001,
+          "fps": 580741.1493136482,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 64,
+          "wall_seconds": 1.102040041
+        },
+        {
+          "cpu_seconds": 0.6062890000000001,
+          "fps": 314380.9255735692,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 64,
+          "wall_seconds": 2.035746917
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest tracking::performance::verifier_throughput_matrix ... VERIFIER {\"cpu_seconds\":0.40219099999999997,\"fps\":1268498.2096089234,\"frames\":640000,\"sliding\":false,\"stages\":1,\"wall_seconds\":0.504533625}\nVERIFIER {\"cpu_seconds\":0.425783,\"fps\":1050776.0139300195,\"frames\":640000,\"sliding\":true,\"stages\":1,\"wall_seconds\":0.609073667}\nVERIFIER {\"cpu_seconds\":0.5600790000000001,\"fps\":580741.1493136482,\"frames\":640000,\"sliding\":false,\"stages\":64,\"wall_seconds\":1.102040041}\nVERIFIER {\"cpu_seconds\":0.6062890000000001,\"fps\":314380.9255735692,\"frames\":640000,\"sliding\":true,\"stages\":64,\"wall_seconds\":2.035746917}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 4.27s\n\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 2,
+      "variant": "current",
+      "case": "verifier",
+      "exit_code": 0,
+      "wall_seconds": 2.003356915898621,
+      "cpu_seconds": 1.6130470000000017,
+      "cpu_over_wall": 0.8051720525678058,
+      "measurements": [
+        {
+          "cpu_seconds": 0.366376,
+          "fps": 1577076.6973672982,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 1,
+          "wall_seconds": 0.405814125
+        },
+        {
+          "cpu_seconds": 0.36948499999999995,
+          "fps": 1610989.2990639932,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 1,
+          "wall_seconds": 0.397271416
+        },
+        {
+          "cpu_seconds": 0.3926020000000001,
+          "fps": 1176711.0504362937,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 64,
+          "wall_seconds": 0.543888833
+        },
+        {
+          "cpu_seconds": 0.4763740000000003,
+          "fps": 995517.5794358398,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 64,
+          "wall_seconds": 0.642881666
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest tracking::performance::verifier_throughput_matrix ... VERIFIER {\"cpu_seconds\":0.366376,\"fps\":1577076.6973672982,\"frames\":640000,\"sliding\":false,\"stages\":1,\"wall_seconds\":0.405814125}\nVERIFIER {\"cpu_seconds\":0.36948499999999995,\"fps\":1610989.2990639932,\"frames\":640000,\"sliding\":true,\"stages\":1,\"wall_seconds\":0.397271416}\nVERIFIER {\"cpu_seconds\":0.3926020000000001,\"fps\":1176711.0504362937,\"frames\":640000,\"sliding\":false,\"stages\":64,\"wall_seconds\":0.543888833}\nVERIFIER {\"cpu_seconds\":0.4763740000000003,\"fps\":995517.5794358398,\"frames\":640000,\"sliding\":true,\"stages\":64,\"wall_seconds\":0.642881666}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 1.99s\n\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 2,
+      "variant": "baseline",
+      "case": "recorded",
+      "exit_code": 101,
+      "wall_seconds": 5.497159249847755,
+      "cpu_seconds": 1.8373399999999993,
+      "cpu_over_wall": 0.334234450284642,
+      "measurements": [
+        {
+          "cpu_seconds": 0.782169,
+          "evidence_bytes": 91567,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 2.035977791
+        },
+        {
+          "cpu_seconds": 0.37129599999999985,
+          "evidence_bytes": 125748,
+          "peer_rx": 9848,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 152,
+          "sliding": true,
+          "submitted": 9848,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.16242
+        },
+        {
+          "cpu_seconds": 0.366123,
+          "evidence_bytes": 104380,
+          "peer_rx": 10000,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.148518917
+        },
+        {
+          "cpu_seconds": 0.30344000000000015,
+          "evidence_bytes": 110813,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": true,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.125198667
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest recorded_high_rate_virtual_run_has_no_unreported_rx_loss ... THROUGHPUT {\"cpu_seconds\":0.782169,\"evidence_bytes\":91567,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":2.035977791}\nTHROUGHPUT {\"cpu_seconds\":0.37129599999999985,\"evidence_bytes\":125748,\"peer_rx\":9848,\"queues\":true,\"recovery\":\"verified\",\"skipped\":152,\"sliding\":true,\"submitted\":9848,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.16242}\nTHROUGHPUT {\"cpu_seconds\":0.366123,\"evidence_bytes\":104380,\"peer_rx\":10000,\"queues\":true,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.148518917}\nTHROUGHPUT {\"cpu_seconds\":0.30344000000000015,\"evidence_bytes\":110813,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":true,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.125198667}\nFAILED\n\nfailures:\n\nfailures:\n    recorded_high_rate_virtual_run_has_no_unreported_rx_loss\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 5.48s\n\n\nthread 'recorded_high_rate_virtual_run_has_no_unreported_rx_loss' (159185207) panicked at crates/canharbor-server/tests/stress.rs:433:5:\nunchanged 10000 fps recorded gate unmet: [(true, true)]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 2,
+      "variant": "current",
+      "case": "recorded",
+      "exit_code": 101,
+      "wall_seconds": 5.11563204205595,
+      "cpu_seconds": 1.7317090000000004,
+      "cpu_over_wall": 0.33851320536025775,
+      "measurements": [
+        {
+          "cpu_seconds": 0.7269309999999999,
+          "evidence_bytes": 91555,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.640648042
+        },
+        {
+          "cpu_seconds": 0.32712799999999986,
+          "evidence_bytes": 119344,
+          "peer_rx": 9280,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 720,
+          "sliding": true,
+          "submitted": 9280,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.129256167
+        },
+        {
+          "cpu_seconds": 0.33527399999999985,
+          "evidence_bytes": 104373,
+          "peer_rx": 10000,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.149106333
+        },
+        {
+          "cpu_seconds": 0.3267059999999997,
+          "evidence_bytes": 110793,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": true,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.168868875
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest recorded_high_rate_virtual_run_has_no_unreported_rx_loss ... THROUGHPUT {\"cpu_seconds\":0.7269309999999999,\"evidence_bytes\":91555,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.640648042}\nTHROUGHPUT {\"cpu_seconds\":0.32712799999999986,\"evidence_bytes\":119344,\"peer_rx\":9280,\"queues\":true,\"recovery\":\"verified\",\"skipped\":720,\"sliding\":true,\"submitted\":9280,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.129256167}\nTHROUGHPUT {\"cpu_seconds\":0.33527399999999985,\"evidence_bytes\":104373,\"peer_rx\":10000,\"queues\":true,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.149106333}\nTHROUGHPUT {\"cpu_seconds\":0.3267059999999997,\"evidence_bytes\":110793,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":true,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.168868875}\nFAILED\n\nfailures:\n\nfailures:\n    recorded_high_rate_virtual_run_has_no_unreported_rx_loss\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 5.10s\n\n\nthread 'recorded_high_rate_virtual_run_has_no_unreported_rx_loss' (159185857) panicked at crates/canharbor-server/tests/stress.rs:433:5:\nunchanged 10000 fps recorded gate unmet: [(true, true)]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 3,
+      "variant": "current",
+      "case": "lane",
+      "exit_code": 0,
+      "wall_seconds": 0.4640074169728905,
+      "cpu_seconds": 0.34832799999999864,
+      "cpu_over_wall": 0.7506948968023708,
+      "measurements": [],
+      "stdout_stderr": "\nrunning 1 test\ntest p2_tests::controlled_virtual_lane_throughput ... P2 controlled virtual path: submitted=40000 peer_rx=40000 elapsed_seconds=0.405656 fps=98606 budget_max_fps=20000; excludes physical wire timing\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.44s\n\n",
+      "complete_measurements": true,
+      "lane_seconds": 0.405656,
+      "lane_fps": 98606
+    },
+    {
+      "round": 3,
+      "variant": "baseline",
+      "case": "lane",
+      "exit_code": 0,
+      "wall_seconds": 0.5854164999909699,
+      "cpu_seconds": 0.38413200000000103,
+      "cpu_over_wall": 0.6561687277449924,
+      "measurements": [],
+      "stdout_stderr": "\nrunning 1 test\ntest p2_tests::controlled_virtual_lane_throughput ... P2 controlled virtual path: submitted=40000 peer_rx=40000 elapsed_seconds=0.549337 fps=72815 budget_max_fps=20000; excludes physical wire timing\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.57s\n\n",
+      "complete_measurements": true,
+      "lane_seconds": 0.549337,
+      "lane_fps": 72815
+    },
+    {
+      "round": 3,
+      "variant": "current",
+      "case": "verifier",
+      "exit_code": 0,
+      "wall_seconds": 2.8387033748440444,
+      "cpu_seconds": 1.7113309999999977,
+      "cpu_over_wall": 0.6028565771138439,
+      "measurements": [
+        {
+          "cpu_seconds": 0.38893900000000003,
+          "fps": 1352207.7819718427,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 1,
+          "wall_seconds": 0.473300042
+        },
+        {
+          "cpu_seconds": 0.40028,
+          "fps": 759934.1729820679,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 1,
+          "wall_seconds": 0.842178208
+        },
+        {
+          "cpu_seconds": 0.428559,
+          "fps": 891603.636210392,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 64,
+          "wall_seconds": 0.71780775
+        },
+        {
+          "cpu_seconds": 0.48543500000000006,
+          "fps": 809500.7562191634,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 64,
+          "wall_seconds": 0.79061075
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest tracking::performance::verifier_throughput_matrix ... VERIFIER {\"cpu_seconds\":0.38893900000000003,\"fps\":1352207.7819718427,\"frames\":640000,\"sliding\":false,\"stages\":1,\"wall_seconds\":0.473300042}\nVERIFIER {\"cpu_seconds\":0.40028,\"fps\":759934.1729820679,\"frames\":640000,\"sliding\":true,\"stages\":1,\"wall_seconds\":0.842178208}\nVERIFIER {\"cpu_seconds\":0.428559,\"fps\":891603.636210392,\"frames\":640000,\"sliding\":false,\"stages\":64,\"wall_seconds\":0.71780775}\nVERIFIER {\"cpu_seconds\":0.48543500000000006,\"fps\":809500.7562191634,\"frames\":640000,\"sliding\":true,\"stages\":64,\"wall_seconds\":0.79061075}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 2.83s\n\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 3,
+      "variant": "baseline",
+      "case": "verifier",
+      "exit_code": 0,
+      "wall_seconds": 2.365191792137921,
+      "cpu_seconds": 1.9689329999999998,
+      "cpu_over_wall": 0.8324623003279836,
+      "measurements": [
+        {
+          "cpu_seconds": 0.43937800000000005,
+          "fps": 1151722.1456502953,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 1,
+          "wall_seconds": 0.555689584
+        },
+        {
+          "cpu_seconds": 0.43326600000000004,
+          "fps": 1105181.3946483643,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 1,
+          "wall_seconds": 0.579090458
+        },
+        {
+          "cpu_seconds": 0.5449309999999999,
+          "fps": 1080609.5319219427,
+          "frames": 640000,
+          "sliding": false,
+          "stages": 64,
+          "wall_seconds": 0.592258333
+        },
+        {
+          "cpu_seconds": 0.5444770000000001,
+          "fps": 1029198.6884149214,
+          "frames": 640000,
+          "sliding": true,
+          "stages": 64,
+          "wall_seconds": 0.621843
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest tracking::performance::verifier_throughput_matrix ... VERIFIER {\"cpu_seconds\":0.43937800000000005,\"fps\":1151722.1456502953,\"frames\":640000,\"sliding\":false,\"stages\":1,\"wall_seconds\":0.555689584}\nVERIFIER {\"cpu_seconds\":0.43326600000000004,\"fps\":1105181.3946483643,\"frames\":640000,\"sliding\":true,\"stages\":1,\"wall_seconds\":0.579090458}\nVERIFIER {\"cpu_seconds\":0.5449309999999999,\"fps\":1080609.5319219427,\"frames\":640000,\"sliding\":false,\"stages\":64,\"wall_seconds\":0.592258333}\nVERIFIER {\"cpu_seconds\":0.5444770000000001,\"fps\":1029198.6884149214,\"frames\":640000,\"sliding\":true,\"stages\":64,\"wall_seconds\":0.621843}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 2.35s\n\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 3,
+      "variant": "current",
+      "case": "recorded",
+      "exit_code": 101,
+      "wall_seconds": 5.032776791136712,
+      "cpu_seconds": 1.6872800000000012,
+      "cpu_over_wall": 0.3352582619939537,
+      "measurements": [
+        {
+          "cpu_seconds": 0.7365849999999999,
+          "evidence_bytes": 90910,
+          "peer_rx": 9896,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 104,
+          "sliding": false,
+          "submitted": 9896,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.588208917
+        },
+        {
+          "cpu_seconds": 0.3385060000000001,
+          "evidence_bytes": 122639,
+          "peer_rx": 9528,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 472,
+          "sliding": true,
+          "submitted": 9528,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.129439625
+        },
+        {
+          "cpu_seconds": 0.3080829999999999,
+          "evidence_bytes": 102309,
+          "peer_rx": 9718,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 282,
+          "sliding": false,
+          "submitted": 9718,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.158141042
+        },
+        {
+          "cpu_seconds": 0.29000399999999993,
+          "evidence_bytes": 107114,
+          "peer_rx": 9616,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 384,
+          "sliding": true,
+          "submitted": 9616,
+          "target_fps": 10000,
+          "verdict": "fail",
+          "wall_seconds": 1.138034792
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest recorded_high_rate_virtual_run_has_no_unreported_rx_loss ... THROUGHPUT {\"cpu_seconds\":0.7365849999999999,\"evidence_bytes\":90910,\"peer_rx\":9896,\"queues\":false,\"recovery\":\"verified\",\"skipped\":104,\"sliding\":false,\"submitted\":9896,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.588208917}\nTHROUGHPUT {\"cpu_seconds\":0.3385060000000001,\"evidence_bytes\":122639,\"peer_rx\":9528,\"queues\":true,\"recovery\":\"verified\",\"skipped\":472,\"sliding\":true,\"submitted\":9528,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.129439625}\nTHROUGHPUT {\"cpu_seconds\":0.3080829999999999,\"evidence_bytes\":102309,\"peer_rx\":9718,\"queues\":true,\"recovery\":\"verified\",\"skipped\":282,\"sliding\":false,\"submitted\":9718,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.158141042}\nTHROUGHPUT {\"cpu_seconds\":0.29000399999999993,\"evidence_bytes\":107114,\"peer_rx\":9616,\"queues\":false,\"recovery\":\"verified\",\"skipped\":384,\"sliding\":true,\"submitted\":9616,\"target_fps\":10000,\"verdict\":\"fail\",\"wall_seconds\":1.138034792}\nFAILED\n\nfailures:\n\nfailures:\n    recorded_high_rate_virtual_run_has_no_unreported_rx_loss\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 5.02s\n\n\nthread 'recorded_high_rate_virtual_run_has_no_unreported_rx_loss' (159187025) panicked at crates/canharbor-server/tests/stress.rs:433:5:\nunchanged 10000 fps recorded gate unmet: [(false, false), (true, true), (false, true), (true, false)]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "complete_measurements": true
+    },
+    {
+      "round": 3,
+      "variant": "baseline",
+      "case": "recorded",
+      "exit_code": 0,
+      "wall_seconds": 5.109527334105223,
+      "cpu_seconds": 1.6818799999999996,
+      "cpu_over_wall": 0.3291654765742689,
+      "measurements": [
+        {
+          "cpu_seconds": 0.7534620000000001,
+          "evidence_bytes": 91556,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.655019458
+        },
+        {
+          "cpu_seconds": 0.3157429999999999,
+          "evidence_bytes": 127122,
+          "peer_rx": 10000,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": true,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.130972708
+        },
+        {
+          "cpu_seconds": 0.2887390000000001,
+          "evidence_bytes": 104384,
+          "peer_rx": 10000,
+          "queues": true,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": false,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.167985416
+        },
+        {
+          "cpu_seconds": 0.30954400000000004,
+          "evidence_bytes": 110791,
+          "peer_rx": 10000,
+          "queues": false,
+          "recovery": "verified",
+          "skipped": 0,
+          "sliding": true,
+          "submitted": 10000,
+          "target_fps": 10000,
+          "verdict": "pass",
+          "wall_seconds": 1.132978042
+        }
+      ],
+      "stdout_stderr": "\nrunning 1 test\ntest recorded_high_rate_virtual_run_has_no_unreported_rx_loss ... THROUGHPUT {\"cpu_seconds\":0.7534620000000001,\"evidence_bytes\":91556,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.655019458}\nTHROUGHPUT {\"cpu_seconds\":0.3157429999999999,\"evidence_bytes\":127122,\"peer_rx\":10000,\"queues\":true,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":true,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.130972708}\nTHROUGHPUT {\"cpu_seconds\":0.2887390000000001,\"evidence_bytes\":104384,\"peer_rx\":10000,\"queues\":true,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":false,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.167985416}\nTHROUGHPUT {\"cpu_seconds\":0.30954400000000004,\"evidence_bytes\":110791,\"peer_rx\":10000,\"queues\":false,\"recovery\":\"verified\",\"skipped\":0,\"sliding\":true,\"submitted\":10000,\"target_fps\":10000,\"verdict\":\"pass\",\"wall_seconds\":1.132978042}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 5.10s\n\n",
+      "complete_measurements": true
+    }
+  ]
+}

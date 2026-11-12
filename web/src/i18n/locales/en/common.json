@@ -1,0 +1,10 @@
+{
+  "language": "Language",
+  "auto": "Auto",
+  "saveFailed": "Language changed, but the preference could not be saved.",
+  "workspace": "Bus workspace",
+  "recordings": "Recordings",
+  "offline": "Offline analysis",
+  "stress": "Stress testing",
+  "about": "About & source"
+}

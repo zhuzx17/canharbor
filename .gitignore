@@ -12,3 +12,5 @@ __pycache__/
 /python/*.egg-info/
 /python/src/*.egg-info/
 /PLAN.md
+
+/dist/

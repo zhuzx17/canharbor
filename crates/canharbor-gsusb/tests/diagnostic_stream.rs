@@ -2,7 +2,7 @@
 mod common;
 use canharbor_core::{Backend, Config, runtime::Runtime};
 use canharbor_gsusb::{backend::GsUsbBackend, wire};
-use canharbor_server::local::{RunningServer, socket_path};
+use canharbor_server::local::RunningServer;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
@@ -35,7 +35,12 @@ async fn diagnostic_survives_data_filter_and_precedes_terminal_fault() {
         .running(&session.id, "owner", lease.generation, true)
         .await
         .unwrap();
-    let dir = std::env::temp_dir().join(format!("ch-diagnostic-{}", std::process::id()));
+    let dir = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-diagnostic-{}", std::process::id()));
     let server = RunningServer::start(runtime.clone(), &dir, 0, false)
         .await
         .unwrap();
@@ -46,14 +51,9 @@ async fn diagnostic_survives_data_filter_and_precedes_terminal_fault() {
         "x-canharbor-client",
         "00000000-0000-4000-8000-000000000001".parse().unwrap(),
     );
-    let (mut ws, _) = client_async(
-        request,
-        tokio::net::UnixStream::connect(socket_path(&dir))
-            .await
-            .unwrap(),
-    )
-    .await
-    .unwrap();
+    let (mut ws, _) = client_async(request, canharbor_ipc::connect(&dir).await.unwrap())
+        .await
+        .unwrap();
     ws.send(Message::Text(
         json!({"type":"subscribe","protocol_version":"1.0","filter":{"ids":[999]}})
             .to_string()

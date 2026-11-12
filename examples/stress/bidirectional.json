@@ -1,0 +1,24 @@
+{
+  "sender": "virtual:0",
+  "receivers": ["virtual:1"],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 1337,
+  "count": 100,
+  "fps": 100,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "flows": [
+    {
+      "name": "reverse",
+      "sender": "virtual:1",
+      "receivers": ["virtual:0"],
+      "can_id": 288,
+      "extended": false,
+      "run_tag": 1338,
+      "count": 100,
+      "fps": 100
+    }
+  ]
+}

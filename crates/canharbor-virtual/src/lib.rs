@@ -32,12 +32,15 @@ impl Default for VirtualBus {
 }
 impl VirtualBus {
     pub fn new(capacity: usize) -> Self {
-        assert!(capacity > 0);
+        Self::with_channel_count(capacity, 2)
+    }
+    /// Explicit simulation topology for multi-agent and protocol tests.
+    pub fn with_channel_count(capacity: usize, count: u8) -> Self {
+        assert!(capacity > 0 && (2..=16).contains(&count));
         Self {
             faults: Mutex::new(FaultState::default()),
-            channels: ["virtual:0", "virtual:1"]
-                .into_iter()
-                .map(|id| (id.into(), broadcast::channel(capacity).0))
+            channels: (0..count)
+                .map(|n| (format!("virtual:{n}"), broadcast::channel(capacity).0))
                 .collect(),
         }
     }
@@ -69,6 +72,9 @@ impl VirtualBus {
     }
 }
 impl Backend for VirtualBus {
+    fn cleanup_observation(&self, channel: &str) -> Option<canharbor_core::CloseSummary> {
+        self.channels.contains_key(channel).then(Default::default)
+    }
     fn capabilities(&self, channel: &str) -> Result<canharbor_core::Capabilities, Error> {
         if !self.channels.contains_key(channel) {
             return Err(Error::UnknownChannel);

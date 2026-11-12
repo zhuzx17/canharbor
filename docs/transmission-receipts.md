@@ -104,9 +104,12 @@ the transmit route.
 ## Browser recovery
 
 The Web UI retains at most 16 recent request/session/generation identifiers in
-per-tab storage, scoped to the browser identity and service instance. It stores
-no frame payload or authorization token and does not restore control after a
-reload. Network errors, timeouts, malformed successful responses and incomplete
+per-tab storage, scoped to the browser identity and service instance. New entries
+also retain a submission timestamp, channel ID when available, frame type,
+identifier, ID width, byte count and BRS flag. This bounded summary contains no
+frame payload or authorization token and does not restore control after a
+reload. Older identifier-only entries remain queryable and explicitly show that
+the time and frame summary are unavailable. Network errors, timeouts, malformed successful responses and incomplete
 server failure metadata leave the result unknown. Explicit rejection statuses
 and complete failure metadata remain distinguishable.
 
@@ -115,3 +118,16 @@ missing receipt is not treated as proof of non-submission. Browser tests discard
 a completed virtual submission's response, reload the page and retrieve its
 original receipt without a second POST. JSON responses are bounded to 1 MiB,
 requests have a 10-second timeout, and redirects are refused.
+
+
+Unconfirmed (`pending` or `outcome_unknown`) entries block a new logical
+send. First use **Check result** for each original request. The query never
+transmits a frame; a missing record or a failed lookup leaves the outcome
+unconfirmed. After attempting those queries, an explicit acknowledgment allows
+one new logical send using the current frame and a new request ID. It does not
+retry an earlier request and may duplicate a physical effect. The acknowledgment
+is not persisted and resets after each new send or result query. If a query
+resolves every outstanding result, no acknowledgment is needed. The normal
+running-channel and explicit-control requirements still apply.
+A returned `queued` receipt confirms service acceptance and does not require the
+unknown-outcome acknowledgment. It still does not establish physical delivery.

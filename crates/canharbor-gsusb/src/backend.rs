@@ -355,6 +355,24 @@ impl Backend for GsUsbBackend {
     fn transmit(&self, _: &str, _: Frame) -> Result<(), Error> {
         Err(Error::Unsupported)
     }
+    fn submit_observed<'a>(
+        &'a self,
+        id: &'a str,
+        frame: Frame,
+        permit: Permit,
+        trace: canharbor_core::measurement::SubmissionTrace,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(async move {
+            let ch = self.index(id)?;
+            self.check_channel(id)?;
+            self.inner
+                .handle
+                .transmit_observed(ch as u8, frame, permit, trace)
+                .await
+                .map_err(map)
+                .map(|_| ())
+        })
+    }
     fn submit<'a>(&'a self, id: &'a str, frame: Frame, permit: Permit) -> BackendFuture<'a, ()> {
         Box::pin(async move {
             let ch = self.index(id)?;

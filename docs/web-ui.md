@@ -1,6 +1,6 @@
 # CANHarbor Web UI 设计
 
-状态：拟实施。目标是离线、本地运行的 CAN 工作台；首版与 Rust 服务同源发布。以下说明产品流程、数据路径与本地硬件访问的边界。
+状态：产品与安全设计。已实现功能见[当前状态](status.md)；本文中的性能目标、目录建议和后续交互不代表已通过验收。Web 工作台与本地 Rust 服务同源发布。
 
 ## 1. 用户流程与页面
 
@@ -68,3 +68,71 @@ Playwright 覆盖配对成功/过期/重复、刷新、共享标签、控制冲�
 初始性能目标：虚拟源 10000 events/s 连续 10 分钟，10000 行显示上限下 UI 可交互，操作响应 p95 < 200ms。此为指定基准机、版本和负载下待测目标；同时记录 CPU、进程内存、浏览器内存与各层丢弃数，不能把模拟吞吐等同实机 CAN 吞吐。
 
 参考：[OWASP WebSocket Security Cheat Sheet](https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/WebSocket_Security_Cheat_Sheet.md)。本地 HTTP 是明确受限部署模型；远程访问必须使用另外设计的 TLS 与访问控制。
+
+## Error recovery
+
+The workbench retains the service error message and adds a next step for expired
+pairing, unavailable service, control/configuration conflicts and invalid input.
+“Check connection and session status” reads the current browser authentication,
+devices and sessions. It never redeems an old pairing link, acquires control,
+starts a channel, or repeats a failed submission. A failed pairing attempt needs
+a fresh `canharbor web open` link. Uncertain operations must be reconciled using
+session state or submission history before a user submits another operation.
+Nominal and FD data bitrate inputs report invalid whole-number ranges inline.
+
+Recovery guidance uses the operation context and service error code. Access
+rejection (403) is distinguished from missing authentication (401), and expired
+control is distinguished from a busy device. Recording and stress panels use
+the same recovery presentation; their refresh actions only read current lists
+and reports. Refreshing status never repeats a mutation or infers nonexecution
+from an absent result.
+
+Workbench drafts retain only the selected view, session identifier, display
+filters and frame input. Restored selections are checked against current
+service sessions; control, credentials and transmission are never restored.
+Changing session or channel while this page holds a lease requires closing the
+controlled session first. A new subscription resumes the display with a fresh,
+fixed elapsed-time origin. The origin does not move when old rows leave the
+500-frame buffer. Frame fields are validated against the selected session's
+CAN FD configuration before either single or periodic submission.
+
+## Observing state and releasing control
+
+A transient list-query failure does not revoke control or stop renewal. The
+workbench labels stale status with the last successful query and renewal times.
+A stream disconnect does not establish that the channel stopped; same-session
+reconnect preserves displayed history and marks the unavailable interval.
+Status checks are read-only and preserve the existing monitor and pause state.
+Authentication is read again only if the page has no authenticated identity.
+A failed renewal with an unknown outcome blocks sending and pauses further
+renewal attempts until current ownership is established or expires.
+
+“Stop and release control” stops acquisition and retains the session until idle
+cleanup. Stopping affects all observers and ends active recordings; “Close” also
+removes the session. Neither operation resumes other work.
+
+Configuration inputs are drafts. The applied values are shown separately.
+External configuration changes preserve an edited draft and require explicit
+review before applying it. Loading current values discards the draft; keeping a
+draft against current values does not apply it. Saving remains a separate action.
+
+## Task navigation and display windows
+
+The live, recordings, offline and stress views have explicit URL fragments and
+matching navigation state. Offline inspection and stress planning do not display
+the live channel configuration form. A running channel collapses configuration;
+Show channel settings reveals it without changing the session. Connection/control
+query timestamps are available under Connection and control details, automatically
+expanded when status is uncertain.
+
+Recent frames retains 500 frames. By ID retains at most 2048 groups keyed by ID,
+identifier width, frame kind and direction, preserving counts and latest payload
+until the group is evicted. Both use exact ID filters with optional `0x`. Counts
+exclude paused updates; display evictions, paused skips and group evictions are
+shown separately from stream gaps. Clear resets the visible frame/group history;
+received and loss counters remain session totals. Neither view replaces recording.
+
+Analyze recording downloads a stopped service capture with a 64 MiB bound and
+opens it directly in the read-only offline viewer. Existing local files can be up
+to 1 GiB. Offline filtering explicitly uses ID substring matching; a time selector
+switches between monotonic seconds and raw nanoseconds without rounding u64 values.

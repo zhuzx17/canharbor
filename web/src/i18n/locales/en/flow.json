@@ -1,0 +1,16 @@
+{
+  "flow_value": "Flow {{value}}",
+  "unnamed_flow": "Unnamed flow",
+  "flow_name": "Flow name",
+  "sender": "Sender",
+  "id_hex": "ID (hex)",
+  "identifier_width": "Identifier width",
+  "11_bit": "11-bit",
+  "29_bit": "29-bit",
+  "frame_count": "Frame count",
+  "rate_frames_s": "Rate (frames/s)",
+  "expected_receivers": "Expected receivers",
+  "this_flow_uses": "This flow uses ",
+  "stages_edit_their_timing_in_advanced_json": " stages. Edit their timing in Advanced JSON.",
+  "remove_flow": "Remove flow"
+}

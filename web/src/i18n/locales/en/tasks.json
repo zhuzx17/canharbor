@@ -1,0 +1,4 @@
+{
+  "multiple_tasks_match_no_task_was_selected": "Multiple tasks match; no task was selected.",
+  "use_1_6000_slots_an_interval_of_10_60000": "Use 1–6000 slots, an interval of 10–60000 ms, and a horizon of at most 60 seconds."
+}

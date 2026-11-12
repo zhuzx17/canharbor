@@ -1,12 +1,63 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Independently implemented LAWICEL Classic CAN ASCII framing.
+//! Independently implemented LAWICEL and opt-in CANable FD ASCII framing.
 //! Protocol facts: https://www.canusb.com/files/can232_v3.pdf (3.0B).
 use canharbor_core::{CanId, Frame};
 use std::fmt::Write;
 pub const MAX_LINE: usize = 32;
+/// Extended ID + DLC + 64 payload bytes, excluding CR.
+pub const MAX_CANABLE_LINE: usize = 138;
 pub const BITRATES: [u32; 9] = [
     10_000, 20_000, 50_000, 100_000, 125_000, 250_000, 500_000, 800_000, 1_000_000,
 ];
+pub const CANABLE_BITRATES: [u32; 10] = [
+    10_000, 20_000, 50_000, 100_000, 125_000, 250_000, 500_000, 750_000, 1_000_000, 83_300,
+];
+pub const CANABLE_DATA_BITRATES: [u32; 2] = [2_000_000, 5_000_000];
+/// Explicit firmware dialect; version text is not used to infer capabilities.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    #[default]
+    Lawicel,
+    CanableFd,
+}
+impl Profile {
+    pub fn nominal_bitrates(self) -> &'static [u32] {
+        match self {
+            Self::Lawicel => &BITRATES,
+            Self::CanableFd => &CANABLE_BITRATES,
+        }
+    }
+    pub fn data_bitrates(self) -> &'static [u32] {
+        match self {
+            Self::Lawicel => &[],
+            Self::CanableFd => &CANABLE_DATA_BITRATES,
+        }
+    }
+    pub fn validate_config(self, config: canharbor_core::Config) -> Result<(), Error> {
+        if !self.nominal_bitrates().contains(&config.nominal_bitrate)
+            || config
+                .data_bitrate
+                .is_some_and(|rate| !self.data_bitrates().contains(&rate))
+        {
+            return Err(Error::Unsupported);
+        }
+        Ok(())
+    }
+    pub fn bitrate(self, rate: u32) -> Result<[u8; 3], Error> {
+        let index = self
+            .nominal_bitrates()
+            .iter()
+            .position(|&v| v == rate)
+            .ok_or(Error::Unsupported)?;
+        Ok([b'S', b'0' + index as u8, b'\r'])
+    }
+    fn max_line(self) -> usize {
+        match self {
+            Self::Lawicel => MAX_LINE,
+            Self::CanableFd => MAX_CANABLE_LINE,
+        }
+    }
+}
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
     #[error("malformed SLCAN record")]
@@ -37,6 +88,8 @@ pub enum Response {
         software: u8,
     },
     Serial([u8; 4]),
+    /// Only decoded during an explicitly requested CANable version handshake.
+    FirmwareVersion(String),
 }
 fn hex(bytes: &[u8]) -> Result<u32, Error> {
     if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_hexdigit) {
@@ -148,21 +201,83 @@ pub fn encode(frame: &Frame) -> Result<Vec<u8>, Error> {
     output.push('\r');
     Ok(output.into_bytes())
 }
-pub fn bitrate(rate: u32) -> Result<[u8; 3], Error> {
-    let index = BITRATES
+/// CANable FD extension: d/D without BRS, b/B with BRS; DLC is hexadecimal.
+/// Classic framing remains available in either profile.
+pub fn encode_with_profile(frame: &Frame, profile: Profile) -> Result<Vec<u8>, Error> {
+    if profile == Profile::Lawicel || !matches!(frame, Frame::FdData { .. }) {
+        return encode(frame);
+    }
+    frame.validate()?;
+    let Frame::FdData { id, brs, .. } = frame else {
+        unreachable!()
+    };
+    let kind = match (id.extended(), brs) {
+        (false, false) => 'd',
+        (true, false) => 'D',
+        (false, true) => 'b',
+        (true, true) => 'B',
+    };
+    let width = if id.extended() { 8 } else { 3 };
+    let mut output = String::with_capacity(MAX_CANABLE_LINE + 1);
+    write!(output, "{kind}{:0width$X}{:X}", id.value(), frame.dlc()).unwrap();
+    for byte in frame.data() {
+        write!(output, "{byte:02X}").unwrap();
+    }
+    output.push('\r');
+    Ok(output.into_bytes())
+}
+pub fn parse_with_profile(bytes: &[u8], profile: Profile) -> Result<Response, Error> {
+    if profile == Profile::Lawicel || !matches!(bytes.first(), Some(b'd' | b'D' | b'b' | b'B')) {
+        return parse(bytes);
+    }
+    if bytes.len() > MAX_CANABLE_LINE {
+        return Err(Error::TooLong);
+    }
+    let extended = matches!(bytes[0], b'D' | b'B');
+    let brs = matches!(bytes[0], b'b' | b'B');
+    let width = if extended { 8 } else { 3 };
+    if bytes.len() < width + 2 {
+        return Err(Error::Malformed);
+    }
+    let id = CanId::new(hex(&bytes[1..=width])?, extended)?;
+    let dlc = hex(&bytes[width + 1..width + 2])? as usize;
+    let length = [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64][dlc];
+    if bytes.len() != width + 2 + length * 2 {
+        return Err(Error::Malformed);
+    }
+    let data = bytes[width + 2..]
+        .as_chunks::<2>()
+        .0
         .iter()
-        .position(|&candidate| candidate == rate)
-        .ok_or(Error::Unsupported)?;
-    Ok([b'S', b'0' + index as u8, b'\r'])
+        .map(|pair| hex(pair).map(|v| v as u8))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Response::Frame {
+        frame: Frame::fd(id, data, brs)?,
+        timestamp_ms: None,
+    })
+}
+pub fn bitrate(rate: u32) -> Result<[u8; 3], Error> {
+    Profile::Lawicel.bitrate(rate)
 }
 /// A bounded incremental parser. Oversized records are discarded through CR;
 /// BEL terminates a rejected command even when no CR follows it.
 #[derive(Default)]
 pub struct Decoder {
+    profile: Profile,
+    version_reply: bool,
     line: Vec<u8>,
     discarding: bool,
 }
 impl Decoder {
+    pub fn with_profile(profile: Profile) -> Self {
+        Self {
+            profile,
+            ..Self::default()
+        }
+    }
+    pub(crate) fn expect_version(&mut self) {
+        self.version_reply = self.profile == Profile::CanableFd;
+    }
     pub fn push(&mut self, byte: u8) -> Option<Result<Response, Error>> {
         if byte == 7 {
             self.line.clear();
@@ -173,14 +288,31 @@ impl Decoder {
             let result = if self.discarding {
                 Err(Error::TooLong)
             } else {
-                parse(&self.line)
+                let parsed = parse_with_profile(&self.line, self.profile);
+                if self.version_reply
+                    && matches!(parsed, Err(Error::Malformed | Error::TooLong))
+                    && !self.line.is_empty()
+                    && self.line.iter().all(|b| b.is_ascii_graphic() || *b == b' ')
+                {
+                    Ok(Response::FirmwareVersion(
+                        String::from_utf8(self.line.clone()).unwrap(),
+                    ))
+                } else {
+                    parsed
+                }
             };
+            if matches!(
+                result,
+                Ok(Response::FirmwareVersion(_) | Response::Version { .. })
+            ) {
+                self.version_reply = false;
+            }
             self.line.clear();
             self.discarding = false;
             return Some(result);
         }
         if !self.discarding {
-            if self.line.len() == MAX_LINE {
+            if self.line.len() == self.profile.max_line() {
                 self.line.clear();
                 self.discarding = true;
             } else {

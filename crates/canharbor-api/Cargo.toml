@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 [dependencies]
+canharbor-stress = { path = "../canharbor-stress" }
 canharbor-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

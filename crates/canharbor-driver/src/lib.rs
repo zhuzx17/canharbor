@@ -38,6 +38,9 @@ pub enum Event {
 /// a transmission and reports outcomes it cannot establish. Stop is idempotent,
 /// retires each unknown count once, and only releases handles owned by this driver.
 pub trait Driver: Send + 'static {
+    fn source_evidence(&self) -> Vec<canharbor_core::measurement::SourceEvidence> {
+        vec![]
+    }
     fn descriptors(&self) -> Vec<Descriptor>;
     fn start(
         &mut self,
@@ -56,6 +59,7 @@ pub trait Driver: Send + 'static {
 }
 struct Shared {
     fault: Mutex<Option<BackendFault>>,
+    cleanup: Mutex<CloseSummary>,
     generation: AtomicU64,
     events: broadcast::Sender<Arc<BackendEvent>>,
 }
@@ -77,11 +81,13 @@ enum Operation {
     Submit(Frame, Permit),
 }
 struct Request {
+    trace: Option<canharbor_core::measurement::SubmissionTrace>,
     key: u32,
     operation: Operation,
     reply: oneshot::Sender<Result<(), Error>>,
 }
 pub struct DriverBackend {
+    sources: Vec<canharbor_core::measurement::SourceEvidence>,
     channels: BTreeMap<String, Info>,
     closing: Arc<AtomicBool>,
     commands: SyncSender<Request>,
@@ -100,7 +106,10 @@ fn collect(total: &mut CloseSummary, summary: CloseSummary) {
     total.unknown_transmissions = total
         .unknown_transmissions
         .saturating_add(summary.unknown_transmissions);
-    total.failures.extend(summary.failures.into_iter().take(32));
+    let remaining = 32usize.saturating_sub(total.failures.len());
+    total
+        .failures
+        .extend(summary.failures.into_iter().take(remaining));
 }
 fn stop(
     driver: &mut dyn Driver,
@@ -111,6 +120,10 @@ fn stop(
     active.permit = None;
     match driver.stop(key) {
         Ok(summary) => {
+            collect(
+                &mut active.info.shared.cleanup.lock().unwrap(),
+                summary.clone(),
+            );
             let success = summary.failures.is_empty();
             collect(total, summary);
             if success {
@@ -120,9 +133,14 @@ fn stop(
             }
         }
         Err(error) => {
-            total
-                .failures
-                .push(format!("native channel {key} cleanup failed: {error}"));
+            let detail = format!("native channel {key} cleanup failed: {error}");
+            if total.failures.len() < 32 {
+                total.failures.push(detail.clone());
+            }
+            let mut observation = active.info.shared.cleanup.lock().unwrap();
+            if observation.failures.len() < 32 {
+                observation.failures.push(detail);
+            }
             Err(error)
         }
     }
@@ -202,6 +220,7 @@ impl DriverBackend {
                         return CloseSummary::default();
                     }
                 };
+                let sources = driver.source_evidence();
                 let descriptors = driver.descriptors();
                 if descriptors.is_empty() || descriptors.len() > 32 {
                     let _ = ready_tx.send(Err(Error::InvalidState));
@@ -228,6 +247,7 @@ impl DriverBackend {
                         format!("{}:{epoch}", descriptor.capabilities.device_id);
                     let shared = Arc::new(Shared {
                         fault: Mutex::new(None),
+                        cleanup: Mutex::new(CloseSummary::default()),
                         generation: AtomicU64::new(0),
                         events: broadcast::channel(256).0,
                     });
@@ -245,18 +265,25 @@ impl DriverBackend {
                         },
                     );
                 }
-                let _ = ready_tx.send(Ok(channels
-                    .values()
-                    .map(|channel| channel.info.clone())
-                    .collect::<Vec<_>>()));
+                let _ = ready_tx.send(Ok((
+                    sources,
+                    channels
+                        .values()
+                        .map(|channel| channel.info.clone())
+                        .collect::<Vec<_>>(),
+                )));
                 let mut total = CloseSummary::default();
                 while !state.load(Ordering::Acquire) {
                     match input.recv_timeout(Duration::from_millis(2)) {
                         Ok(Request {
+                            trace,
                             key,
                             operation,
                             reply,
                         }) => {
+                            if let Some(t) = &trace {
+                                t.worker_started();
+                            }
                             let Some(active) = channels.get_mut(&key) else {
                                 let _ = reply.send(Err(Error::UnknownChannel));
                                 continue;
@@ -315,12 +342,19 @@ impl DriverBackend {
                                     {
                                         Err(Error::Unsupported)
                                     } else {
-                                        driver.submit(key, frame, &|| {
+                                        if let Some(t) = &trace {
+                                            t.call_started("native_worker_driver_call");
+                                        }
+                                        let result = driver.submit(key, frame, &|| {
                                             if state.load(Ordering::Acquire) || reply.is_closed() {
                                                 return Err(Error::ControlExpired);
                                             }
                                             permit.check()
-                                        })
+                                        });
+                                        if let Some(t) = &trace {
+                                            t.call_completed();
+                                        }
+                                        result
                                     }
                                 }
                             };
@@ -394,11 +428,12 @@ impl DriverBackend {
                 total
             })
             .map_err(|_| Error::Fault(BackendFault::Disconnected))?;
-        let channels = ready_rx
+        let (sources, channels) = ready_rx
             .await
             .map_err(|_| Error::Fault(BackendFault::Disconnected))??;
         opening.0 = None;
         Ok(Self {
+            sources,
             channels: channels
                 .into_iter()
                 .map(|info| (info.id.clone(), info))
@@ -413,11 +448,23 @@ impl DriverBackend {
         self.channels.get(channel).ok_or(Error::UnknownChannel)
     }
     async fn request(&self, channel: &str, operation: Operation) -> Result<(), Error> {
+        self.request_observed(channel, operation, None).await
+    }
+    async fn request_observed(
+        &self,
+        channel: &str,
+        operation: Operation,
+        trace: Option<canharbor_core::measurement::SubmissionTrace>,
+    ) -> Result<(), Error> {
         self.check_channel(channel)?;
         let key = self.info(channel)?.descriptor.key;
         let (reply, receive) = oneshot::channel();
+        if let Some(t) = &trace {
+            t.enqueued();
+        }
         self.commands
             .try_send(Request {
+                trace,
                 key,
                 operation,
                 reply,
@@ -437,6 +484,28 @@ impl Drop for DriverBackend {
     }
 }
 impl Backend for DriverBackend {
+    fn source_evidence(&self, channel: &str) -> Vec<canharbor_core::measurement::SourceEvidence> {
+        if self.channels.contains_key(channel) {
+            self.sources.clone()
+        } else {
+            vec![]
+        }
+    }
+    fn submit_observed<'a>(
+        &'a self,
+        c: &'a str,
+        f: Frame,
+        p: Permit,
+        t: canharbor_core::measurement::SubmissionTrace,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(self.request_observed(c, Operation::Submit(f, p), Some(t)))
+    }
+
+    fn cleanup_observation(&self, channel: &str) -> Option<CloseSummary> {
+        self.channels
+            .get(channel)
+            .map(|info| info.shared.cleanup.lock().unwrap().clone())
+    }
     fn channels(&self) -> Vec<Channel> {
         self.channels
             .values()
@@ -548,6 +617,7 @@ mod tests {
         events: BTreeMap<u32, VecDeque<Event>>,
         unknown: BTreeMap<u32, u64>,
         gate: Option<Arc<Gate>>,
+        submit_gate: Option<Arc<Gate>>,
         stop_fails: bool,
         stop_gate: Option<Arc<Gate>>,
         dropped: bool,
@@ -649,6 +719,18 @@ mod tests {
             guard: &dyn Fn() -> Result<(), Error>,
         ) -> Result<(), Error> {
             guard()?;
+            let gate = self.state().submit_gate.clone();
+            if let Some(gate) = gate {
+                gate.entered.store(true, Ordering::Release);
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while !gate.released.load(Ordering::Acquire) {
+                    if Instant::now() > deadline {
+                        return Err(Error::Fault(BackendFault::Disconnected));
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+            guard()?;
             let mut state = self.state();
             assert!(state.opened.contains(&key));
             state.writes.push(key);
@@ -703,6 +785,55 @@ mod tests {
         .await
         .unwrap();
     }
+
+    #[tokio::test]
+    async fn observed_native_queue_is_measured_and_cancelled_queued_io_stays_unauthorized() {
+        let state = Arc::new(Mutex::new(State::default()));
+        let backend = backend(state.clone()).await;
+        let runtime = Runtime::new(backend.clone());
+        let (a, g) = session(&runtime, 0).await;
+        let gate = Arc::new(Gate::default());
+        state.lock().unwrap().submit_gate = Some(gate.clone());
+        let origin = tokio::time::Instant::now();
+        let mut one = runtime.prepare_send(&a, "owner", g, frame()).await.unwrap();
+        let t1 = one.observe(origin, origin);
+        let rt = runtime.clone();
+        let first = tokio::spawn(async move { rt.submit_prepared(one).await });
+        wait_until(|| gate.entered.load(Ordering::Acquire)).await;
+        let mut two = runtime.prepare_send(&a, "owner", g, frame()).await.unwrap();
+        let t2 = two.observe(origin, tokio::time::Instant::now());
+        let cancel = two.cancellation();
+        let rt = runtime.clone();
+        let second = tokio::spawn(async move { rt.submit_prepared(two).await });
+        wait_until(|| t2.snapshot().enqueued_ns.is_some()).await;
+        assert!(t2.snapshot().worker_started_ns.is_none());
+        cancel.cancel();
+        gate.released.store(true, Ordering::Release);
+        first.await.unwrap().unwrap();
+        assert!(second.await.unwrap().is_err());
+        let p = t1.snapshot();
+        assert_eq!(p.scope, "native_worker_driver_call");
+        assert!(p.worker_started_ns.unwrap() >= p.enqueued_ns.unwrap());
+        assert!(p.call_completed_ns.unwrap() >= p.call_started_ns.unwrap());
+        assert!(t2.snapshot().worker_started_ns.unwrap() >= t2.snapshot().enqueued_ns.unwrap());
+        assert_eq!(state.lock().unwrap().writes.len(), 1);
+        runtime.shutdown().await;
+    }
+    #[test]
+    fn native_cleanup_failure_details_remain_bounded() {
+        let mut total = CloseSummary::default();
+        for _ in 0..128 {
+            collect(
+                &mut total,
+                CloseSummary {
+                    unknown_transmissions: 1,
+                    failures: vec!["failure".into(); 20],
+                },
+            );
+        }
+        assert_eq!(total.unknown_transmissions, 128);
+        assert_eq!(total.failures.len(), 32);
+    }
     #[tokio::test]
     async fn one_worker_routes_multiple_channels_and_aggregates_unknown_close_results_once() {
         let state = Arc::new(Mutex::new(State::default()));
@@ -734,10 +865,31 @@ mod tests {
         runtime.send(&a, "owner", ga, frame()).await.unwrap();
         runtime.send(&b, "owner", gb, frame()).await.unwrap();
         runtime.running(&a, "owner", ga, false).await.unwrap();
+        assert_eq!(
+            runtime
+                .cleanup_observation("fake_native:epoch:0")
+                .unwrap()
+                .unknown_transmissions,
+            1
+        );
+        assert_eq!(
+            runtime
+                .cleanup_observation("fake_native:epoch:1")
+                .unwrap()
+                .unknown_transmissions,
+            0
+        );
         assert!(!runtime.get(&a).await.unwrap().running);
         assert!(runtime.get(&b).await.unwrap().running);
         let summary = runtime.shutdown().await;
         assert_eq!(summary.unknown_transmissions, 2);
+        assert_eq!(
+            runtime
+                .cleanup_observation("fake_native:epoch:1")
+                .unwrap()
+                .unknown_transmissions,
+            1
+        );
         assert!(summary.failures.is_empty());
         assert_eq!(
             backend
@@ -799,6 +951,7 @@ mod tests {
             backend
                 .commands
                 .try_send(Request {
+                    trace: None,
                     key: 0,
                     operation: Operation::Configure(config(false)),
                     reply,

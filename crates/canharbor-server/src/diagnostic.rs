@@ -9,6 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(unix)]
 fn kernel_release() -> Option<String> {
     let mut value = std::mem::MaybeUninit::<libc::utsname>::uninit();
     // SAFETY: uname initializes this correctly sized output on success.
@@ -22,6 +23,11 @@ fn kernel_release() -> Option<String> {
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+#[cfg(windows)]
+fn kernel_release() -> Option<String> {
+    None
 }
 
 pub(crate) async fn report(State(s): State<Arc<AppState>>) -> Json<dto::DeviceReport> {

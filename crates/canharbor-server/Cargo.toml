@@ -9,6 +9,10 @@ rust-version.workspace = true
 default = []
 web-ui = ["dep:rust-embed", "dep:mime_guess"]
 [dependencies]
+canharbor-platform = { path = "../canharbor-platform" }
+canharbor-ipc = { path = "../canharbor-ipc" }
+sha2 = "0.11"
+canharbor-stress = { path = "../canharbor-stress" }
 canharbor-tasks = { path = "../canharbor-tasks" }
 canharbor-api = { path = "../canharbor-api" }
 canharbor-capture.workspace = true

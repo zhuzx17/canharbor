@@ -5,6 +5,11 @@ mod diagnostic;
 pub mod dto;
 pub mod local;
 mod periodic;
+pub mod preferences;
+mod stress;
+mod stress_coord;
+mod stress_recovery;
+mod stress_store;
 mod tx;
 use axum::{
     Extension, Json, Router,
@@ -33,6 +38,7 @@ use uuid::Uuid;
 struct Native(bool);
 #[derive(Clone)]
 struct Identity {
+    revoked: Arc<std::sync::atomic::AtomicBool>,
     id: String,
     cookie: Option<String>,
     csrf: Option<String>,
@@ -60,7 +66,9 @@ pub struct AppState {
     auth: Mutex<Auth>,
     transmissions: Arc<tx::Manager>,
     periodic: Arc<periodic::Manager>,
+    stress: stress::Manager,
     ws_slots: Arc<Semaphore>,
+    preferences: preferences::Store,
 }
 fn secret() -> String {
     format!(
@@ -83,14 +91,28 @@ impl AppState {
         web_enabled: bool,
         root: Option<std::path::PathBuf>,
     ) -> Arc<Self> {
+        Self::with_preferences_file(runtime, origin, web_enabled, root, None)
+    }
+    pub fn with_preferences_file(
+        runtime: Arc<Runtime>,
+        origin: String,
+        web_enabled: bool,
+        root: Option<std::path::PathBuf>,
+        preferences_file: Option<std::path::PathBuf>,
+    ) -> Arc<Self> {
         let instance = Uuid::new_v4().simple().to_string();
         let capture_root = root
             .unwrap_or_else(|| std::env::temp_dir().join(format!("canharbor-captures-{instance}")));
         let transmissions = tx::Manager::new();
         let periodic = periodic::Manager::new(runtime.clone(), transmissions.clone());
         Arc::new(Self {
+            stress: stress::Manager::new(runtime.clone(), capture_root.join("stress")),
             periodic,
-            captures: capture::Manager::new(runtime.clone(), capture_root, instance.clone()),
+            captures: capture::Manager::new(
+                runtime.clone(),
+                capture_root.clone(),
+                instance.clone(),
+            ),
             runtime,
             origin,
             cookie_name: format!("canharbor_{instance}"),
@@ -99,6 +121,7 @@ impl AppState {
             auth: Mutex::new(Auth::default()),
             transmissions,
             ws_slots: Arc::new(Semaphore::new(16)),
+            preferences: preferences::Store::new(preferences_file),
         })
     }
     async fn issue_pair(&self) -> Result<String, ApiError> {
@@ -266,6 +289,7 @@ async fn guard(
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or_else(ApiError::forbidden)?;
             return Ok(Some(Identity {
+                revoked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 id: format!("native:{id}"),
                 cookie: None,
                 csrf: None,
@@ -351,6 +375,10 @@ pub fn router(s: Arc<AppState>, native: bool) -> Router {
         .route("/api/v1/native/pair", post(native_pair))
         .route("/api/v1/auth/pair", post(pair))
         .route("/api/v1/auth/session", get(auth_session).delete(logout))
+        .route(
+            "/api/v1/preferences",
+            get(get_preferences).put(set_preferences),
+        )
         .route("/api/v1/devices", get(devices))
         .route("/api/v1/diagnostics/devices", get(diagnostic::report))
         .route("/api/v1/channels/{id}/capabilities", get(capabilities))
@@ -371,6 +399,26 @@ pub fn router(s: Arc<AppState>, native: bool) -> Router {
         .route("/api/v1/sessions/{id}/tx/{receipt}", get(transmission))
         .route("/api/v1/sessions/{id}/stream", get(stream))
         .route("/api/v1/sessions/{id}/tasks", post(periodic_start))
+        .route("/api/v1/stress/requests/{request}", get(stress::by_request))
+        .route("/api/v1/stress/coordinate", post(stress_coord::action))
+        .route("/api/v1/stress/validate", post(stress::validate))
+        .route("/api/v1/stress/runs", post(stress::start).get(stress::list))
+        .route(
+            "/api/v1/stress/runs/{id}",
+            get(stress::get_run).delete(stress::delete),
+        )
+        .route("/api/v1/stress/runs/{id}/events", get(stress::events))
+        .route("/api/v1/stress/runs/{id}/report", get(stress::get_run))
+        .route("/api/v1/stress/runs/{id}/artifacts", get(stress::artifacts))
+        .route(
+            "/api/v1/stress/runs/{id}/artifacts/{name}",
+            get(stress::download),
+        )
+        .route("/api/v1/stress/runs/{id}/stop", post(stress::stop))
+        .route(
+            "/api/v1/stress/runs/{id}/flows/{name}/stop",
+            post(stress::stop_flow),
+        )
         .route("/api/v1/tasks", get(periodic_list))
         .route("/api/v1/tasks/{id}", get(periodic_get))
         .route("/api/v1/tasks/{id}/cancel", post(periodic_cancel))
@@ -379,7 +427,9 @@ pub fn router(s: Arc<AppState>, native: bool) -> Router {
         .route("/api/v1/captures", get(captures).post(capture_start))
         .route(
             "/api/v1/captures/{id}",
-            get(capture_status).delete(capture_delete),
+            get(capture_status)
+                .patch(capture_rename)
+                .delete(capture_delete),
         )
         .route("/api/v1/captures/{id}/stop", post(capture_stop))
         .route("/api/v1/captures/{id}/download", get(capture_download))
@@ -424,6 +474,7 @@ async fn pair(
     }
     let token = secret();
     let id = Identity {
+        revoked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         id: format!("browser:{}", Uuid::new_v4()),
         cookie: Some(token.clone()),
         csrf: Some(secret()),
@@ -459,12 +510,42 @@ async fn auth_session(Extension(i): Extension<Identity>) -> Json<dto::Auth> {
     })
 }
 async fn logout(State(s): State<Arc<AppState>>, Extension(i): Extension<Identity>) -> StatusCode {
+    i.revoked.store(true, std::sync::atomic::Ordering::Release);
+    s.stress.stop_owner(capture_owner(&i));
     if let Some(token) = i.cookie {
         s.auth.lock().await.browsers.remove(&token);
     }
     s.periodic.cancel_owner(&i.id);
     s.runtime.revoke(&i.id).await;
     StatusCode::NO_CONTENT
+}
+async fn get_preferences(State(s): State<Arc<AppState>>) -> Json<preferences::Preferences> {
+    Json(s.preferences.get())
+}
+async fn set_preferences(
+    State(s): State<Arc<AppState>>,
+    WireJson(next): WireJson<preferences::Preferences>,
+) -> Result<Json<preferences::Preferences>, ApiError> {
+    let saved = tokio::task::spawn_blocking(move || {
+        s.preferences.set(next)?;
+        Ok::<_, std::io::Error>(s.preferences.get())
+    })
+    .await
+    .map_err(|_| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "preferences_io_error",
+            "Could not save language preference",
+        )
+    })?
+    .map_err(|_| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "preferences_io_error",
+            "Could not save language preference",
+        )
+    })?;
+    Ok(Json(saved))
 }
 async fn devices(State(s): State<Arc<AppState>>) -> Json<dto::Devices> {
     let mut devices: std::collections::BTreeMap<String, dto::Device> =
@@ -958,7 +1039,7 @@ async fn send_ws<T: Serialize>(
 #[derive(rust_embed::RustEmbed)]
 #[folder = "../../web/dist/"]
 struct WebAssets;
-async fn static_file(req: Request) -> Response {
+async fn static_file(State(_state): State<Arc<AppState>>, req: Request) -> Response {
     if req.method() != axum::http::Method::GET || req.uri().path().starts_with("/api/") {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -968,7 +1049,21 @@ async fn static_file(req: Request) -> Response {
         let path = if path.is_empty() { "index.html" } else { path };
         if let Some(file) = WebAssets::get(path) {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            return ([(header::CONTENT_TYPE, mime.as_ref())], file.data.to_vec()).into_response();
+            let data = if path == "index.html" {
+                String::from_utf8_lossy(&file.data)
+                    .replacen(
+                        "data-ui-locale=\"auto\"",
+                        &format!(
+                            "data-ui-locale=\"{}\"",
+                            _state.preferences.get().locale.as_str()
+                        ),
+                        1,
+                    )
+                    .into_bytes()
+            } else {
+                file.data.to_vec()
+            };
+            return ([(header::CONTENT_TYPE, mime.as_ref())], data).into_response();
         }
         StatusCode::NOT_FOUND.into_response()
     }
@@ -1025,7 +1120,8 @@ async fn capture_start(
     Extension(identity): Extension<Identity>,
     WireJson(request): WireJson<dto::CaptureRequest>,
 ) -> Result<(StatusCode, Json<dto::Capture>), ApiError> {
-    if !dto::valid_client_request_id(&request.client_request_id)
+    if !dto::valid_capture_name(&request.name)
+        || !dto::valid_client_request_id(&request.client_request_id)
         || request.session_id.is_empty()
         || request.session_id.chars().take(129).count() > 128
         || !(1..=86400).contains(&request.max_duration_seconds)
@@ -1033,18 +1129,19 @@ async fn capture_start(
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "capture request has invalid IDs or duration",
+            "capture request has invalid name, IDs or duration",
         ));
     }
     Ok((
         StatusCode::CREATED,
         Json(dto::capture(
             s.captures
-                .start(
+                .start_named(
                     &request.session_id,
                     capture_owner(&identity),
                     &request.client_request_id,
                     request.max_duration_seconds,
+                    &request.name,
                 )
                 .await?,
         )),
@@ -1057,6 +1154,30 @@ async fn capture_status(
 ) -> Result<Json<dto::Capture>, ApiError> {
     Ok(Json(dto::capture(
         s.captures.get(&id, capture_owner(&identity)).await?,
+    )))
+}
+async fn capture_rename(
+    State(s): State<Arc<AppState>>,
+    Extension(identity): Extension<Identity>,
+    Path(id): Path<String>,
+    WireJson(request): WireJson<dto::CaptureRename>,
+) -> Result<Json<dto::Capture>, ApiError> {
+    if !dto::valid_capture_name(&request.name) || !dto::valid_capture_name(&request.expected_name) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Recording names must be printable, at most 120 characters, and have no surrounding whitespace.",
+        ));
+    }
+    Ok(Json(dto::capture(
+        s.captures
+            .rename(
+                &id,
+                capture_owner(&identity),
+                &request.expected_name,
+                &request.name,
+            )
+            .await?,
     )))
 }
 async fn capture_stop(
@@ -1083,6 +1204,8 @@ async fn capture_download(
 ) -> Result<Response, ApiError> {
     use futures_util::StreamExt;
     use tokio::io::AsyncReadExt;
+    let info = s.captures.get(&id, capture_owner(&identity)).await?;
+    let disposition = capture::download_disposition(&info);
     let (file, size, permit) = s.captures.download(&id, capture_owner(&identity)).await?;
 
     let stream = tokio_util::io::ReaderStream::new(tokio::fs::File::from_std(file).take(size)).map(
@@ -1099,12 +1222,9 @@ async fn capture_download(
     response
         .headers_mut()
         .insert(header::CONTENT_LENGTH, size.to_string().parse().unwrap());
-    response.headers_mut().insert(
-        header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{id}.ndjson\"")
-            .parse()
-            .unwrap(),
-    );
+    response
+        .headers_mut()
+        .insert(header::CONTENT_DISPOSITION, disposition.parse().unwrap());
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());

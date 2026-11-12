@@ -545,10 +545,12 @@ pub extern "C" fn canharbor_response_close(response: u64) -> i32 {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::io::{Read, Write};
+    #[cfg(unix)]
     #[test]
     fn close_cancels_queued_calls_without_repeating_inflight_io() {
         let directory = std::env::temp_dir().join(format!("ch-c-close-{}", std::process::id()));

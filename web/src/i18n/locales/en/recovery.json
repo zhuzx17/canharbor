@@ -1,0 +1,15 @@
+{
+  "advice_0": "Run canharbor web open in a terminal to open a fresh pairing link. Links expire after 60 seconds and work once. Checking the connection does not redeem the old link.",
+  "advice_1": "The service denied this request. Check browser access and session status first. If access has expired, run canharbor web open for a fresh pairing link. Pairing links work once; this error can also indicate an access or request-verification failure.",
+  "advice_2": "Control has expired. Refresh status, then explicitly acquire control and start the channel if needed. Nothing is resumed automatically.",
+  "advice_3": "Another session or client holds this resource. Refresh status and review the owner before explicitly acquiring control. Do not repeat the operation until the resource is available.",
+  "advice_4": "Refresh session status. Review the selected session and current configuration before explicitly applying changes again. For recordings, an existing request identifier may refer to different settings.",
+  "advice_5": "Refresh the list: this resource may have expired or been removed. A missing submission or run result does not prove that execution never occurred.",
+  "advice_6": "The service reached a resource limit. Review active recordings, sessions and tests, then explicitly stop unneeded work before trying again.",
+  "advice_7": "Check that the local service is running, then check the connection. A failed response can leave an operation's outcome unknown. Review session status and submission history before repeating an operation.",
+  "advice_8": "Review the current resource and submission history. Reconnect explicitly if disconnected; sending and control are never restored automatically.",
+  "validation": "Review the {{subject}}. The service message identifies the rejected value; correct it before submitting again.",
+  "recordingSubject": "recording name, duration and source session",
+  "stressSubject": "test plan, selected channels and resource limits",
+  "channelSubject": "channel settings and frame fields"
+}

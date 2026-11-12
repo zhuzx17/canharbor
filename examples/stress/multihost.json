@@ -1,0 +1,98 @@
+{
+  "group_id": "66666666-6666-4666-8666-666666666666",
+  "timeout_seconds": 60,
+  "hosts": [
+    {
+      "name": "bench_a",
+      "ssh": "can-bench-a",
+      "runtime_dir": "/tmp/canharbor-bench",
+      "executable": "canharbor",
+      "plan": {
+        "sender": "virtual:0",
+        "receivers": [
+          "virtual:1"
+        ],
+        "can_id": 291,
+        "extended": false,
+        "run_tag": 2882400005,
+        "count": 100,
+        "fps": 100,
+        "bitrate": 500000,
+        "receivers_active": true,
+        "drain_ms": 200,
+        "traffic": {
+          "format": "fd_v1",
+          "data_bitrate": 2000000,
+          "stream": 1,
+          "epoch": 1,
+          "seed": 42,
+          "variants": [
+            {
+              "length": 32,
+              "brs": false
+            },
+            {
+              "length": 48,
+              "brs": true
+            },
+            {
+              "length": 64,
+              "brs": true
+            }
+          ]
+        },
+        "evidence": {
+          "max_bytes": 67108864,
+          "segment_bytes": 4194304,
+          "sample_every": 1
+        }
+      }
+    },
+    {
+      "name": "bench_b",
+      "ssh": "can-bench-b",
+      "runtime_dir": "/tmp/canharbor-bench",
+      "executable": "canharbor",
+      "plan": {
+        "sender": "virtual:0",
+        "receivers": [
+          "virtual:1"
+        ],
+        "can_id": 293,
+        "extended": false,
+        "run_tag": 2882400006,
+        "count": 100,
+        "fps": 100,
+        "bitrate": 500000,
+        "receivers_active": true,
+        "drain_ms": 200,
+        "traffic": {
+          "format": "fd_v1",
+          "data_bitrate": 2000000,
+          "stream": 1,
+          "epoch": 1,
+          "seed": 42,
+          "variants": [
+            {
+              "length": 32,
+              "brs": false
+            },
+            {
+              "length": 48,
+              "brs": true
+            },
+            {
+              "length": 64,
+              "brs": true
+            }
+          ]
+        },
+        "evidence": {
+          "max_bytes": 67108864,
+          "segment_bytes": 4194304,
+          "sample_every": 1
+        }
+      }
+    }
+  ]
+}

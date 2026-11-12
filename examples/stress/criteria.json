@@ -1,0 +1,27 @@
+{
+  "sender": "virtual:0",
+  "receivers": ["virtual:1"],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 1337,
+  "count": 0,
+  "fps": 0,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "stages": [
+    { "name": "low", "fps": 100, "duration_seconds": 10, "warmup_seconds": 2 },
+    { "name": "measurement", "fps": 500, "duration_seconds": 10, "warmup_seconds": 2 }
+  ],
+  "criteria": {
+    "min_submitted_ppm": 990000,
+    "max_scheduler_skipped": 10,
+    "max_missing_expected_ppm": 10000,
+    "max_missing_submitted_ppm": 1000,
+    "max_duplicates": 1,
+    "max_reordered": 0,
+    "max_payload_errors": 0,
+    "max_out_of_range": 0,
+    "max_dispatch_lateness_ns": 20000000
+  }
+}

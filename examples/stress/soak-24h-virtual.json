@@ -1,0 +1,29 @@
+{
+  "sender": "virtual:0",
+  "receivers": ["virtual:1"],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 2882400004,
+  "count": 0,
+  "fps": 0,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "stages": [
+    {
+      "name": "24-hour-virtual-soak",
+      "fps": 1,
+      "duration_seconds": 86400,
+      "warmup_seconds": 0
+    }
+  ],
+  "evidence": {
+    "max_bytes": 1073741824,
+    "segment_bytes": 4194304,
+    "sample_every": 1
+  },
+  "stability": {
+    "max_rss_growth_bytes": 33554432,
+    "warmup_seconds": 60
+  }
+}

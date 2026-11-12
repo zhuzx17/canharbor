@@ -1,6 +1,6 @@
 # CANHarbor API 与事件契约
 
-状态：v0.1 设计草案；完整接口仍在实施。M0 已实现 payload 的 JSON Schema、TypeScript 生成与验证见 [api-schema.md](api-schema.md)，实际范围见 [m0-status.md](m0-status.md)。OpenAPI 路由生成尚未实现。本文优先定义整体语义。REST 控制面与只读 WebSocket 数据面共享同一个服务核心。
+状态：v0.1 设计草案；完整接口仍在实施。M0 已实现 payload 的 JSON Schema、TypeScript 生成与验证见 [api-schema.md](api-schema.md)，实际范围见 [status.md](status.md)。OpenAPI 路由生成尚未实现。本文优先定义整体语义。REST 控制面与只读 WebSocket 数据面共享同一个服务核心。
 
 ## 1. 地址、版本与认证
 

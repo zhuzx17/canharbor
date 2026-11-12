@@ -698,6 +698,46 @@ async fn authenticated_capture_api_and_download_schema() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let id = capture["id"].as_str().unwrap();
+    let path = format!("/api/v1/captures/{id}");
+    let (status, _, _) = call(
+        app.clone(),
+        "PATCH",
+        &path,
+        json!({"name":"bad\nname", "expected_name":""}),
+        &headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, renamed) = call(
+        app.clone(),
+        "PATCH",
+        &path,
+        json!({"name":"台架测试", "expected_name":""}),
+        &headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(renamed["name"], "台架测试");
+    let (status, _, _) = call(
+        app.clone(),
+        "PATCH",
+        &path,
+        json!({"name":"Stale", "expected_name":""}),
+        &headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _, retried) = call(
+        app.clone(),
+        "POST",
+        "/api/v1/captures",
+        json!({"session_id":session.id,"client_request_id":"capture"}),
+        &headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(retried["id"], id);
+    assert_eq!(retried["name"], "台架测试");
     let (_, _, list) = call(
         app.clone(),
         "GET",
@@ -733,6 +773,12 @@ async fn authenticated_capture_api_and_download_schema() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["cache-control"], "no-store");
     assert_eq!(response.headers()["content-type"], "application/x-ndjson");
+    assert!(
+        response.headers()["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("filename*=UTF-8''%E5%8F%B0%E6%9E%B6%E6%B5%8B%E8%AF%95")
+    );
     let length = response.headers()["content-length"]
         .to_str()
         .unwrap()

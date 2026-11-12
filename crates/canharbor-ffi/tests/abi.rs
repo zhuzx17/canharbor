@@ -60,7 +60,7 @@ fn call(client: u64, method: &str, path: &str, body: Value, generation: &str) ->
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn opaque_handles_support_control_errors_and_bounded_responses() {
     let _serial = SERIAL.lock().await;
-    let root = PathBuf::from("/tmp").join(format!("ch-ffi-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-ffi-{}", uuid::Uuid::new_v4().simple()));
     let bus = Arc::new(VirtualBus::default());
     let server = RunningServer::start(Runtime::new(bus.clone()), &root, 0, false)
         .await
@@ -94,7 +94,7 @@ async fn opaque_handles_support_control_errors_and_bounded_responses() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn c_header_and_example_link_and_run_against_the_shared_library() {
     let _serial = SERIAL.lock().await;
-    let root = PathBuf::from("/tmp").join(format!("ch-c-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-c-{}", uuid::Uuid::new_v4().simple()));
     let server = RunningServer::start(
         Runtime::new(Arc::new(VirtualBus::default())),
         &root,
@@ -109,26 +109,40 @@ async fn c_header_and_example_link_and_run_against_the_shared_library() {
         .parent()
         .unwrap()
         .to_path_buf();
-    let binary = root.join("example");
-    let output = std::process::Command::new("cc")
+    let binary = root.join(if cfg!(windows) {
+        "example.exe"
+    } else {
+        "example"
+    });
+    let mut command = std::process::Command::new(if cfg!(windows) { "clang" } else { "cc" });
+    command
         .args(["-std=c11", "-Wall", "-Wextra", "-Werror"])
         .arg("-I")
         .arg(manifest.join("../../include"))
-        .arg(manifest.join("examples/local-client.c"))
-        .arg("-L")
-        .arg(&deps)
-        .arg("-lcanharbor_ffi")
-        .arg(format!("-Wl,-rpath,{}", deps.display()))
-        .arg("-o")
-        .arg(&binary)
-        .output()
-        .unwrap();
+        .arg(manifest.join("examples/local-client.c"));
+    if cfg!(windows) {
+        command
+            .arg("--target=x86_64-pc-windows-msvc")
+            .arg(deps.join("canharbor_ffi.dll.lib"));
+    } else {
+        command
+            .arg("-L")
+            .arg(&deps)
+            .arg("-lcanharbor_ffi")
+            .arg(format!("-Wl,-rpath,{}", deps.display()));
+    }
+    let output = command.arg("-o").arg(&binary).output().unwrap();
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let mut paths = vec![deps];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
     let output = std::process::Command::new(binary)
+        .env("PATH", std::env::join_paths(paths).unwrap())
         .arg(&root)
         .output()
         .unwrap();
@@ -158,7 +172,8 @@ async fn c_header_and_example_link_and_run_against_the_shared_library() {
 #[test]
 fn locally_invalid_paths_are_not_reported_as_unavailable_or_unknown() {
     let _serial = SERIAL.blocking_lock();
-    let client = open("/tmp/canharbor-invalid-path-no-service");
+    let absent = test_temp_dir().join("canharbor-invalid-path-no-service");
+    let client = open(absent.to_str().unwrap());
     for method in ["GET", "POST"] {
         for path in [
             "sessions",
@@ -193,8 +208,8 @@ fn locally_invalid_paths_are_not_reported_as_unavailable_or_unknown() {
 #[test]
 fn query_extension_rejects_invalid_or_oversized_parameters_before_io() {
     let _serial = SERIAL.blocking_lock();
-    let root = format!("/tmp/ch-query-{}", uuid::Uuid::new_v4().simple());
-    let client = open(&root);
+    let root = test_temp_dir().join(format!("ch-query-{}", uuid::Uuid::new_v4().simple()));
+    let client = open(root.to_str().unwrap());
     for query in [
         json!({"not":"pairs"}),
         json!([["key", 1]]),
@@ -225,4 +240,12 @@ fn query_extension_rejects_invalid_or_oversized_parameters_before_io() {
         assert_eq!(response, 0);
     }
     assert_eq!(canharbor_client_close(client), 0);
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    }
 }

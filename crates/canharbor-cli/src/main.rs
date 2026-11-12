@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+mod i18n;
 mod sequence;
 mod status;
+mod stress;
+mod stress_coordinate;
 mod tasks;
 use canharbor_core::runtime::Runtime;
 use canharbor_server::{
     dto::{FrameDto, FrameKind, StreamMessage},
     local::{RunningServer, default_runtime_dir},
 };
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use serde_json::{Value, json};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use uuid::Uuid;
@@ -15,144 +18,213 @@ use uuid::Uuid;
 #[command(
     name = "canharbor",
     version,
-    about = "Local CAN/CAN FD workbench with explicit device selection."
+    about = "Local CAN/CAN FD workbench with explicit device selection.",
+    after_help = "FIRST VIRTUAL RECEIVE/SEND:\n  canharbor serve --open\n  canharbor monitor --channel virtual:1 --listen-only\n  canharbor send --channel virtual:0 --id 123 --data 01020304 --active\nRun each command in a separate terminal. IDs are hexadecimal without 0x; bitrates are in bit/s.\nDiagnostics: canharbor doctor --devices\nA custom --runtime-dir must be shared by the service and all clients."
 )]
 struct Args {
+    #[arg(long, global = true, value_parser = ["auto", "en", "zh-CN"], help = "Output language: auto, en or zh-CN; auto follows the saved preference or environment")]
+    lang: Option<String>,
     #[arg(long, global = true)]
+    #[arg(help = "Service runtime directory; use the same directory for all clients")]
     runtime_dir: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Run the local service; defaults to two simulated channels
     Serve {
         #[arg(long)]
+        #[arg(help = "Open a one-time paired browser after service startup")]
         open: bool,
         #[arg(long)]
+        #[arg(help = "Run without the browser workbench (CLI-only)")]
         no_web: bool,
         #[arg(long, default_value_t = 0)]
+        #[arg(help = "Loopback HTTP port; 0 chooses an available port")]
         port: u16,
-        #[cfg(feature = "kvaser")]
+        #[cfg(all(unix, feature = "kvaser"))]
         #[arg(long, requires = "kvaser_channel")]
+        #[arg(help = "Absolute path to the compatible Kvaser native library")]
         kvaser_library: Option<PathBuf>,
-        #[cfg(feature = "kvaser")]
+        #[cfg(all(unix, feature = "kvaser"))]
         #[arg(long,requires="kvaser_library",value_parser=parse_kvaser_handle)]
+        #[arg(help = "Explicit channel handle from kvaser-list")]
         kvaser_channel: Vec<u32>,
-        #[cfg(feature = "peak")]
+        #[cfg(all(unix, feature = "peak"))]
         #[arg(long, requires = "peak_channel")]
+        #[arg(help = "Absolute path to the compatible PEAK native library")]
         peak_library: Option<PathBuf>,
-        #[cfg(feature = "peak")]
+        #[cfg(all(unix, feature = "peak"))]
         #[arg(long,requires="peak_library",value_parser=parse_peak_handle)]
+        #[arg(help = "Explicit hexadecimal channel handle from peak-list")]
         peak_channel: Vec<u16>,
         #[cfg(feature = "slcan")]
         #[arg(long, requires = "serial_baud")]
+        #[arg(help = "Absolute serial device path, for example /dev/cu.usbmodem123")]
         slcan: Option<PathBuf>,
         #[cfg(feature = "slcan")]
         #[arg(long, requires = "slcan")]
+        #[arg(help = "Serial link baud rate, separate from CAN bitrate")]
         serial_baud: Option<u32>,
         #[cfg(feature = "slcan")]
         #[arg(long, requires = "slcan")]
         slcan_polling: bool,
+        /// Explicit firmware dialect; CANable FD commands have no firmware acknowledgement.
+        #[cfg(feature = "slcan")]
+        #[arg(long, requires = "slcan", value_parser = ["lawicel", "canable-fd"])]
+        slcan_profile: Option<String>,
         #[arg(long,requires_all=["usb_index","usb_interface","usb_alternate"])]
+        #[arg(
+            help = "Explicit gs_usb vendor:product IDs in hexadecimal; enumerate with usb-list first"
+        )]
         usb: Option<String>,
         #[arg(long, requires = "usb")]
+        #[arg(
+            help = "Index from the latest usb-list result; verify identity after every reconnect"
+        )]
         usb_index: Option<usize>,
         #[arg(long, requires = "usb")]
+        #[arg(help = "USB interface number from usb-list")]
         usb_interface: Option<u8>,
         #[arg(long, requires = "usb")]
+        #[arg(help = "USB alternate setting from usb-list")]
         usb_alternate: Option<u8>,
     },
+    /// Create and inspect bounded periodic transmission tasks
     Task {
         #[command(subcommand)]
         command: tasks::Command,
     },
+    /// Validate, run and inspect stress tests
+    Stress {
+        #[command(subcommand)]
+        command: stress::Command,
+    },
+    /// Send or receive a bounded communication-check sequence
     Sequence {
         #[command(subcommand)]
         command: sequence::Command,
     },
+    /// List channels registered by the running service
     Devices {
         #[arg(long)]
+        #[arg(help = "Print machine-readable JSON")]
         json: bool,
     },
+    /// Record, download and inspect traffic
     Capture {
         #[command(subcommand)]
         command: CaptureCommand,
     },
+    /// Read service diagnostics without opening or starting channels
     Doctor {
         /// Include a read-only device report; writes JSON to stdout.
         #[arg(long)]
         devices: bool,
     },
+    /// Read a previous transmission result without resending
     Receipt {
         #[arg(long)]
+        #[arg(help = "Existing opaque session ID from canharbor session list")]
         session: String,
         #[arg(long, required_unless_present = "request", conflicts_with = "request")]
         receipt: Option<Uuid>,
         #[arg(long, required_unless_present = "receipt", conflicts_with = "receipt")]
         request: Option<String>,
         #[arg(long, requires = "request")]
+        #[arg(help = "Original lease generation for unambiguous read-only result lookup")]
         generation: Option<String>,
     },
+    /// Read the advertised capabilities of a channel
     Capabilities {
         #[arg(long)]
+        #[arg(help = "Channel ID from canharbor devices, for example virtual:0")]
         channel: String,
     },
-    #[cfg(feature = "kvaser")]
+    #[cfg(all(unix, feature = "kvaser"))]
+    /// Enumerate Kvaser channels using an explicitly selected native library
     KvaserList {
         #[arg(long)]
         library: PathBuf,
     },
-    #[cfg(feature = "peak")]
+    #[cfg(all(unix, feature = "peak"))]
+    /// Enumerate PEAK channels using an explicitly selected native library
     PeakList {
         #[arg(long)]
         library: PathBuf,
     },
+    /// Enumerate matching USB devices without starting CAN acquisition
     UsbList {
         #[arg(long)]
+        #[arg(help = "USB vendor:product IDs in hexadecimal, for example 1d50:606f")]
         vid_pid: String,
     },
+    /// Open or print a fresh browser pairing link
     Web {
         #[command(subcommand)]
         command: WebCommand,
     },
+    /// List or open channel sessions
     Session {
         #[command(subcommand)]
         command: SessionCommand,
     },
+    /// Observe traffic; --channel creates a foreground listener until interrupted
     Monitor {
         #[arg(long, conflicts_with = "channel")]
+        #[arg(help = "Existing opaque session ID from canharbor session list")]
         session: Option<String>,
         #[arg(long, conflicts_with = "session")]
+        #[arg(help = "Channel ID from canharbor devices, for example virtual:0")]
         channel: Option<String>,
         #[arg(long, default_value_t = 500000)]
+        #[arg(help = "Nominal CAN bitrate in bit/s, for example 500000")]
         bitrate: u32,
         #[arg(long)]
+        #[arg(help = "Enable CAN FD in this session")]
         fd: bool,
         #[arg(long, requires = "fd")]
+        #[arg(help = "CAN FD data bitrate in bit/s; requires --fd (default 2000000)")]
         data_bitrate: Option<u32>,
         #[arg(long)]
+        #[arg(help = "Observe without participating in CAN ACK or transmitting")]
         listen_only: bool,
         #[arg(long)]
+        #[arg(help = "Maximum number of frames; see the command description for bounds")]
         count: Option<usize>,
     },
+    /// Submit one frame with explicit --active; does not retry an unknown result
+    #[command(
+        after_help = "Example: canharbor send --channel virtual:0 --id 123 --data 01020304 --active\nCAN FD: add --fd --data-bitrate 2000000 --brs; payload length must be an exact CAN FD wire length.\nUnknown result (exit 7): inspect the printed request/session identifiers with receipt; do not resend blindly."
+    )]
     Send {
         #[arg(long)]
+        #[arg(help = "Channel ID from canharbor devices, for example virtual:0")]
         channel: String,
         #[arg(long)]
+        #[arg(help = "CAN identifier in hexadecimal without 0x, for example 123")]
         id: String,
         #[arg(long, default_value = "")]
+        #[arg(help = "Payload as complete hexadecimal bytes without spaces, for example 01020304")]
         data: String,
         #[arg(long)]
+        #[arg(help = "Use a 29-bit identifier instead of the default 11-bit identifier")]
         extended: bool,
         #[arg(long)]
+        #[arg(help = "Enable CAN FD in this session")]
         fd: bool,
         #[arg(long, requires = "fd")]
+        #[arg(help = "CAN FD data bitrate in bit/s; requires --fd (default 2000000)")]
         data_bitrate: Option<u32>,
         #[arg(long)]
+        #[arg(help = "Use CAN FD bit-rate switching; requires --fd")]
         brs: bool,
         #[arg(long)]
+        #[arg(help = "Explicitly authorize active CAN operation; sending requires this flag")]
         active: bool,
         #[arg(long, default_value_t = 500000)]
+        #[arg(help = "Nominal CAN bitrate in bit/s, for example 500000")]
         bitrate: u32,
     },
 }
@@ -164,50 +236,67 @@ enum CaptureCommand {
         #[arg(long, default_value_t=100, value_parser=clap::value_parser!(u16).range(0..=500))]
         limit: u16,
     },
+    /// Start a bounded recording of an already running session
     Start {
         #[arg(long)]
+        #[arg(help = "Existing opaque session ID from canharbor session list")]
         session: String,
         #[arg(long)]
+        #[arg(help = "Unique ID for this logical request; retain it for read-only recovery")]
         request_id: Option<String>,
         #[arg(long, default_value_t=3600, value_parser=clap::value_parser!(u32).range(1..=86400))]
         duration: u32,
+        /// Optional printable recording name (up to 120 characters).
+        #[arg(long, default_value = "")]
+        name: String,
     },
+    /// List retained recordings and their completion state
     List,
-    Status {
-        id: Uuid,
-    },
-    Stop {
-        id: Uuid,
-    },
+    /// Read one recording status
+    Status { id: Uuid },
+    /// Finish a recording without stopping the channel
+    Stop { id: Uuid },
+    /// Download a stopped recording (up to 64 MiB)
     Download {
         id: Uuid,
         #[arg(long)]
+        #[arg(help = "Destination file path")]
         output: PathBuf,
     },
-    Delete {
-        id: Uuid,
-    },
+    /// Delete a stopped recording and its stored file
+    Delete { id: Uuid },
 }
 #[derive(Subcommand)]
 enum WebCommand {
+    /// Pair a browser; opening the link never starts a channel
     Open {
         #[arg(long)]
+        #[arg(
+            help = "Print the one-time pairing link instead of opening a browser (expires in 60 seconds)"
+        )]
         print: bool,
     },
 }
 #[derive(Subcommand)]
 enum SessionCommand {
+    /// List sessions, applied settings and ownership
     List,
+    /// Open a configured session without starting acquisition
     Open {
         #[arg(long)]
+        #[arg(help = "Channel ID from canharbor devices, for example virtual:0")]
         channel: String,
         #[arg(long, default_value_t = 500000)]
+        #[arg(help = "Nominal CAN bitrate in bit/s, for example 500000")]
         bitrate: u32,
         #[arg(long)]
+        #[arg(help = "Enable CAN FD in this session")]
         fd: bool,
         #[arg(long, requires = "fd")]
+        #[arg(help = "CAN FD data bitrate in bit/s; requires --fd (default 2000000)")]
         data_bitrate: Option<u32>,
         #[arg(long)]
+        #[arg(help = "Observe without participating in CAN ACK or transmitting")]
         listen_only: bool,
     },
 }
@@ -279,7 +368,7 @@ impl Client {
                             if count.is_some_and(|c|seen>=c) {ws.close().await?;return Ok(())}
                         }
                     }
-                    message @ StreamMessage::Gap{..} => eprintln!("stream gap: {}",serde_json::to_string(&message)?),
+                    message @ StreamMessage::Gap{..} => eprintln!("{}: {}",i18n::choose("stream gap", "事件流丢失"),serde_json::to_string(&message)?),
                     message @ StreamMessage::SessionFault{..} => {
                         let StreamMessage::SessionFault{code,..}=&message else {unreachable!()};
                         return Err(Box::new(status::Failure::Reported{code:if matches!(code,canharbor_server::dto::FaultCode::DeviceDisconnected){4}else{6},message:format!("channel fault: {}",serde_json::to_string(&message)?)}));
@@ -301,6 +390,7 @@ impl Client {
 fn print(value: Value) {
     println!("{}", serde_json::to_string_pretty(&value).unwrap())
 }
+#[cfg(unix)]
 fn browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     let status = std::process::Command::new("open").arg(url).status()?;
@@ -311,28 +401,61 @@ fn browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+#[cfg(windows)]
+fn browser(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    let url: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+    let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            1,
+        )
+    };
+    if result as isize <= 32 {
+        return Err("could not open browser; use `canharbor web open --print`".into());
+    }
+    Ok(())
+}
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("{e}");
+        i18n::report_error(e.as_ref());
         std::process::exit(status::exit_code(e.as_ref()))
     }
 }
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    i18n::initialize();
+    let matches = i18n::command(Args::command())
+        .try_get_matches()
+        .unwrap_or_else(|error| {
+            if i18n::chinese()
+                && !matches!(
+                    error.kind(),
+                    clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+                )
+            {
+                eprintln!("{}\n技术详情：", i18n::error_summary(2));
+            }
+            error.exit()
+        });
+    let args = Args::from_arg_matches(&matches)?;
     let dir = args.runtime_dir.unwrap_or_else(default_runtime_dir);
     if let Command::Capture {
         command: CaptureCommand::Inspect { input, limit },
     } = &args.command
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(input)?;
-        if !file.metadata()?.is_file() {
-            return Err(status::input("capture input must be a regular file"));
-        }
+        let file = canharbor_platform::files::open_regular(input).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::InvalidInput {
+                status::input(error.to_string())
+            } else {
+                Box::new(error) as Box<dyn std::error::Error>
+            }
+        })?;
         let result = canharbor_replay::inspect(file, usize::from(*limit))
             .map_err(|e| status::input(e.to_string()))?;
         print(serde_json::to_value(result)?);
@@ -346,13 +469,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         usb_index,
         usb_interface,
         usb_alternate,
-        #[cfg(feature = "kvaser")]
+        #[cfg(all(unix, feature = "kvaser"))]
         kvaser_library,
-        #[cfg(feature = "kvaser")]
+        #[cfg(all(unix, feature = "kvaser"))]
         kvaser_channel,
-        #[cfg(feature = "peak")]
+        #[cfg(all(unix, feature = "peak"))]
         peak_library,
-        #[cfg(feature = "peak")]
+        #[cfg(all(unix, feature = "peak"))]
         peak_channel,
         #[cfg(feature = "slcan")]
         slcan,
@@ -360,8 +483,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         serial_baud,
         #[cfg(feature = "slcan")]
         slcan_polling,
+        #[cfg(feature = "slcan")]
+        slcan_profile,
     } = args.command
     {
+        #[cfg(windows)]
+        let mut shutdown = {
+            // A launcher may pass an inherited "ignore Ctrl-C" attribute.
+            // Register our handler before restoring normal delivery; never leave
+            // a readiness window in which the default handler bypasses cleanup.
+            let signal = tokio::signal::windows::ctrl_c()?;
+            if unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 0) } == 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            signal
+        };
         if open && no_web {
             return Err(status::input("--open conflicts with --no-web"));
         }
@@ -389,6 +525,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "slcan")]
         if let Some(path) = slcan {
+            let profile = match slcan_profile.as_deref().unwrap_or("lawicel") {
+                "lawicel" => canharbor_slcan::Profile::Lawicel,
+                "canable-fd" => canharbor_slcan::Profile::CanableFd,
+                _ => unreachable!("validated by clap"),
+            };
+            if slcan_polling && profile == canharbor_slcan::Profile::CanableFd {
+                return Err(status::input(
+                    "--slcan-polling is unsupported with --slcan-profile canable-fd",
+                ));
+            }
             let baud =
                 serial_baud.ok_or_else(|| status::input("--slcan requires --serial-baud"))?;
             let transport = tokio::task::spawn_blocking(move || {
@@ -396,15 +542,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await??;
             backends.push(Arc::new(
-                canharbor_slcan::backend::SlcanBackend::open(
+                canharbor_slcan::backend::SlcanBackend::open_with_profile(
                     transport,
                     Uuid::new_v4().simple().to_string(),
                     slcan_polling,
+                    profile,
                 )
                 .await?,
             ));
         }
-        #[cfg(feature = "kvaser")]
+        #[cfg(all(unix, feature = "kvaser"))]
         if let Some(path) = kvaser_library {
             // SAFETY: explicit startup path selects trusted native code with the
             // documented open-source libKvaserUSB ABI; no HTTP path can load code.
@@ -418,7 +565,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             backends.push(Arc::new(backend));
         }
-        #[cfg(feature = "peak")]
+        #[cfg(all(unix, feature = "peak"))]
         if let Some(path) = peak_library {
             // SAFETY: this explicit startup option selects trusted native code
             // implementing the documented libPeakUSB 1.0.2 ABI. No HTTP input
@@ -441,11 +588,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
         eprintln!(
-            "CANHarbor: local service ready{}",
+            "{}{}",
+            i18n::choose(
+                "CANHarbor: local service ready",
+                "CANHarbor：本地服务已就绪"
+            ),
             if no_web {
                 String::new()
             } else {
-                format!(" at {}", server.state.origin)
+                format!("{}{}", i18n::choose(" at ", "，地址 "), server.state.origin)
             }
         );
         if open {
@@ -457,11 +608,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{e}")
             }
         }
+        #[cfg(unix)]
         tokio::signal::ctrl_c().await?;
+        #[cfg(windows)]
+        shutdown
+            .recv()
+            .await
+            .ok_or("console signal stream closed")?;
         let report = server.shutdown().await;
         let failed = !report.failures.is_empty();
         for failure in report.failures {
-            eprintln!("shutdown: {failure}");
+            eprintln!("{}: {failure}", i18n::choose("shutdown", "关闭"));
         }
         if report.unknown_transmissions > 0 || report.unknown_tasks > 0 {
             return Err(status::unknown(format!(
@@ -477,10 +634,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new(dir)?;
     match args.command {
         Command::Task { command } => tasks::run(&client.local, command).await?,
+        Command::Stress { command } => stress::run(&client.local, command).await?,
         Command::Sequence { command } => sequence::run(&client.local, command).await?,
         Command::Capture {command} => match command {
             CaptureCommand::Inspect {..} => unreachable!(),
-            CaptureCommand::Start {session,request_id,duration} => print(client.request("POST","/captures",json!({"session_id":session,"client_request_id":request_id.unwrap_or_else(||Uuid::new_v4().to_string()),"max_duration_seconds":duration}),None).await?),
+            CaptureCommand::Start {session,request_id,duration,name} => print(client.request("POST","/captures",json!({"session_id":session,"client_request_id":request_id.unwrap_or_else(||Uuid::new_v4().to_string()),"max_duration_seconds":duration,"name":name}),None).await?),
             CaptureCommand::List => print(client.request("GET","/captures",Value::Null,None).await?),
             CaptureCommand::Status {id} => print(client.request("GET",&format!("/captures/{id}"),Value::Null,None).await?),
             CaptureCommand::Stop {id} => print(client.request("POST",&format!("/captures/{id}/stop"),json!({}),None).await?),
@@ -497,9 +655,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                         "{} ({})",
                         device["label"].as_str().unwrap_or("CAN device"),
                         if device["simulated"].as_bool() == Some(true) {
-                            "simulated"
+                            i18n::choose("simulated", "模拟")
                         } else {
-                            "hardware, unverified"
+                            i18n::choose("hardware, unverified", "硬件，未验证")
                         }
                     );
                     for c in device["channels"].as_array().ok_or("invalid channels")? {
@@ -676,13 +834,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let _=tokio::time::timeout(Duration::from_secs(2),client.request("DELETE",&cleanup_endpoint,json!({}),Some(&g))).await;
             print(result?)
         }
-        #[cfg(feature="kvaser")]
+        #[cfg(all(unix, feature = "kvaser"))]
         Command::KvaserList { library } => {
             // SAFETY: explicit native-code selection under the documented ABI contract.
             let devices=tokio::task::spawn_blocking(move||unsafe {canharbor_kvaser::discover(&library)}).await??;
             print(json!({"backend":"kvaser","verification":"hardware_unverified","library_abi":"1.0.2","channels":devices}));
         },
-        #[cfg(feature="peak")]
+        #[cfg(all(unix, feature = "peak"))]
         Command::PeakList {library} => {
             // SAFETY: the user explicitly selects a trusted implementation of
             // this native ABI. Discovery does not initialize a controller.
@@ -703,7 +861,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(feature = "peak")]
+#[cfg(all(unix, feature = "peak"))]
 fn parse_peak_handle(value: &str) -> Result<u16, String> {
     let digits = value
         .strip_prefix("0x")
@@ -740,7 +898,7 @@ fn parse_vid_pid(value: &str) -> Result<canharbor_gsusb::usb::VidPid, Box<dyn st
     })
 }
 
-#[cfg(feature = "kvaser")]
+#[cfg(all(unix, feature = "kvaser"))]
 fn parse_kvaser_handle(value: &str) -> Result<u32, String> {
     let number = value
         .strip_prefix("0x")
@@ -782,6 +940,22 @@ mod selection_tests {
         assert!(Args::try_parse_from(["canharbor", "serve", "--serial-baud", "115200"]).is_err());
         assert!(Args::try_parse_from(["canharbor", "serve", "--slcan-polling"]).is_err());
         assert!(
+            Args::try_parse_from(["canharbor", "serve", "--slcan-profile", "canable-fd"]).is_err()
+        );
+        assert!(
+            Args::try_parse_from([
+                "canharbor",
+                "serve",
+                "--slcan",
+                "/dev/null",
+                "--serial-baud",
+                "115200",
+                "--slcan-profile",
+                "unknown"
+            ])
+            .is_err()
+        );
+        assert!(
             Args::try_parse_from([
                 "canharbor",
                 "serve",
@@ -793,7 +967,7 @@ mod selection_tests {
             .is_ok()
         );
     }
-    #[cfg(feature = "peak")]
+    #[cfg(all(unix, feature = "peak"))]
     #[test]
     fn peak_requires_explicit_library_and_handle() {
         assert!(
@@ -843,7 +1017,7 @@ mod selection_tests {
             .is_err()
         );
     }
-    #[cfg(feature = "kvaser")]
+    #[cfg(all(unix, feature = "kvaser"))]
     #[test]
     fn kvaser_requires_explicit_library_and_nonzero_handle() {
         assert!(

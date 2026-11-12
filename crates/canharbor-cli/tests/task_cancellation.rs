@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use std::{path::PathBuf, time::Duration};
+#![cfg(unix)]
+use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
@@ -8,7 +9,7 @@ use tokio::{
 async fn lost_or_malformed_cancellation_responses_are_unknown_but_rejections_are_preserved() {
     for mode in 0..3 {
         let root =
-            PathBuf::from("/tmp").join(format!("ch-cancel-loss-{}", uuid::Uuid::new_v4().simple()));
+            test_temp_dir().join(format!("ch-cancel-loss-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir(&root).unwrap();
         let listener = tokio::net::UnixListener::bind(root.join("service.sock")).unwrap();
         let id = uuid::Uuid::new_v4();
@@ -82,5 +83,13 @@ async fn lost_or_malformed_cancellation_responses_are_unknown_but_rejections_are
         assert!(out.stdout.is_empty());
         service.await.unwrap();
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
     }
 }

@@ -1,0 +1,18 @@
+{
+  "sender": "virtual:0",
+  "receivers": ["virtual:1"],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 2882400002,
+  "count": 0,
+  "fps": 0,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "stages": [
+    {"name": "low", "fps": 100, "duration_seconds": 5, "warmup_seconds": 1},
+    {"name": "medium", "fps": 500, "duration_seconds": 5, "warmup_seconds": 1},
+    {"name": "high", "fps": 1000, "duration_seconds": 5, "warmup_seconds": 1}
+  ],
+  "evidence": {"max_bytes": 268435456, "segment_bytes": 4194304, "sample_every": 10}
+}

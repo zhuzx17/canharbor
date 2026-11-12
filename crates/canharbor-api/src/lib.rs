@@ -613,6 +613,31 @@ pub struct Legal {
     pub exact_source_archive: Option<String>,
     pub notice: String,
 }
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum UiLocale {
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "en")]
+    En,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+}
+impl UiLocale {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::En => "en",
+            Self::ZhCn => "zh-CN",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UiPreferences {
+    pub locale: UiLocale,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ErrorDetail {
     pub code: String,
@@ -630,12 +655,23 @@ pub struct ApiErrorBody {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptureRequest {
+    #[serde(default)]
+    #[schemars(length(max = 120))]
+    pub name: String,
     pub session_id: String,
     #[schemars(length(min = 1, max = 128))]
     pub client_request_id: String,
     #[serde(default = "capture_duration")]
     #[schemars(range(min = 1, max = 86400))]
     pub max_duration_seconds: u32,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureRename {
+    #[schemars(length(max = 120))]
+    pub name: String,
+    #[schemars(length(max = 120))]
+    pub expected_name: String,
 }
 fn capture_duration() -> u32 {
     3600
@@ -651,6 +687,9 @@ pub enum CaptureState {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Capture {
+    pub name: String,
+    pub channel_id: Option<String>,
+    pub created_unix_ms: Option<String>,
     pub id: String,
     pub session_id: String,
     pub state: CaptureState,
@@ -715,11 +754,23 @@ pub struct PeriodicTasks {
 /// implemented M0 payloads; routing and authentication remain in the API design.
 #[derive(JsonSchema)]
 pub struct Contract {
+    pub ui_preferences: UiPreferences,
+    pub stress_events: canharbor_stress::Events,
+    pub stress_runs: canharbor_stress::Runs,
+    pub stress_artifacts: canharbor_stress::Artifacts,
+    pub stress_metric: canharbor_stress::Metric,
+    pub stress_validation: canharbor_stress::Validation,
+    pub stress_request: canharbor_stress::Request,
+    pub stress_coord_request: canharbor_stress::CoordRequest,
+    pub stress_coord_status: canharbor_stress::CoordStatus,
+    pub stress_plan: canharbor_stress::Plan,
+    pub stress_report: canharbor_stress::Report,
     pub periodic_request: PeriodicRequest,
     pub periodic_task: PeriodicTask,
     pub periodic_tasks: PeriodicTasks,
     pub counter: Decimal,
     pub capture_request: CaptureRequest,
+    pub capture_rename: CaptureRename,
     pub capture: Capture,
     pub captures: Captures,
     pub session: Session,
@@ -758,4 +809,11 @@ pub fn schema() -> Schema {
     schemars::generate::SchemaSettings::draft07()
         .into_generator()
         .into_root_schema_for::<Contract>()
+}
+
+/// Empty names use the capture ID; named recordings must be printable and bounded.
+pub fn valid_capture_name(name: &str) -> bool {
+    name.chars().count() <= 120
+        && !name.chars().any(char::is_control)
+        && (name.is_empty() || name.trim() == name && !name.trim().is_empty())
 }

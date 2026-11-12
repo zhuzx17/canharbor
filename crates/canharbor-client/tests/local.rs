@@ -7,8 +7,12 @@ use serde_json::json;
 use std::sync::Arc;
 #[tokio::test]
 async fn typed_clients_share_contract_and_keep_independent_control_identities() {
-    let dir =
-        std::path::PathBuf::from("/tmp").join(format!("ch-sdk-{}", uuid::Uuid::new_v4().simple()));
+    let dir = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-sdk-{}", uuid::Uuid::new_v4().simple()));
     let server = RunningServer::start(
         Runtime::new(Arc::new(VirtualBus::default())),
         &dir,
@@ -102,14 +106,17 @@ async fn typed_clients_share_contract_and_keep_independent_control_identities() 
 #[tokio::test]
 async fn response_bounds_and_redirect_refusal_are_enforced_over_uds() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let root = std::path::PathBuf::from("/tmp")
-        .join(format!("ch-sdk-bound-{}", uuid::Uuid::new_v4().simple()));
-    std::fs::create_dir(&root).unwrap();
+    let root = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-sdk-bound-{}", uuid::Uuid::new_v4().simple()));
+    canharbor_platform::private::directory(&root).unwrap();
     for kind in 0..4 {
-        let path = root.join("service.sock");
-        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let mut listener = canharbor_ipc::Listener::bind(&root).unwrap();
         let peer = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut socket = listener.accept().await.unwrap();
             let mut request = [0; 4096];
             let _ = socket.read(&mut request).await.unwrap();
             match kind {
@@ -146,7 +153,8 @@ async fn response_bounds_and_redirect_refusal_are_enforced_over_uds() {
             assert!(error.to_string().contains("JSON limit"));
         }
         peer.await.unwrap();
-        std::fs::remove_file(path).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(root.join("service.sock")).unwrap();
     }
     std::fs::remove_dir(root).unwrap();
 }
@@ -154,14 +162,17 @@ async fn response_bounds_and_redirect_refusal_are_enforced_over_uds() {
 #[tokio::test]
 async fn failed_binary_downloads_do_not_publish_partial_files() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let root = std::path::PathBuf::from("/tmp")
-        .join(format!("ch-download-{}", uuid::Uuid::new_v4().simple()));
-    std::fs::create_dir(&root).unwrap();
+    let root = std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-download-{}", uuid::Uuid::new_v4().simple()));
+    canharbor_platform::private::directory(&root).unwrap();
     for oversized in [false, true] {
-        let socket = root.join("service.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let mut listener = canharbor_ipc::Listener::bind(&root).unwrap();
         let peer = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut stream = listener.accept().await.unwrap();
             let mut request = [0; 4096];
             let _ = stream.read(&mut request).await.unwrap();
             let response = if oversized {
@@ -189,7 +200,8 @@ async fn failed_binary_downloads_do_not_publish_partial_files() {
                 .ends_with(".part"))
         );
         peer.await.unwrap();
-        std::fs::remove_file(socket).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(root.join("service.sock")).unwrap();
     }
     std::fs::remove_dir(root).unwrap();
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Validated CAN values and the backend boundary. No HTTP or USB dependencies.
+pub mod measurement;
 mod suspend;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -205,6 +206,28 @@ pub struct CloseSummary {
     pub failures: Vec<String>,
 }
 pub trait Backend: Send + Sync {
+    fn source_evidence(&self, _channel: &str) -> Vec<measurement::SourceEvidence> {
+        vec![]
+    }
+    fn submit_observed<'a>(
+        &'a self,
+        channel: &'a str,
+        frame: Frame,
+        permit: control::Permit,
+        trace: measurement::SubmissionTrace,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(async move {
+            trace.call_started("backend_boundary; worker_queue_unknown");
+            let result = self.submit(channel, frame, permit).await;
+            trace.call_completed();
+            result
+        })
+    }
+
+    /// Read-only cumulative cleanup accounting; None means unsupported, never zero.
+    fn cleanup_observation(&self, _channel: &str) -> Option<CloseSummary> {
+        None
+    }
     fn shutdown_report(&self) -> BackendFuture<'_, CloseSummary> {
         Box::pin(async {
             self.shutdown().await?;

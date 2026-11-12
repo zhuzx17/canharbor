@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { decode, type ContractName, type Payload } from "./contract";
-import type { Auth, FrameInput, ErrorDetail } from "./generated/api";
+import type { Auth, ErrorDetail, FrameInput } from "./generated/api";
+import { LocalizedError } from "./i18n/messages";
 export type {
   Auth,
-  FrameInput,
-  Frame,
-  Session,
-  Device,
   BusEvent,
+  Device,
+  Frame,
+  FrameInput,
+  Session,
 } from "./generated/api";
 export class ApiFailure extends Error {
   readonly unknown: boolean;
@@ -26,7 +27,8 @@ export class ApiFailure extends Error {
   }
 }
 export async function boundedJson(response: Response): Promise<unknown> {
-  if (!response.body) throw new Error("Missing API response body");
+  if (!response.body)
+    throw new LocalizedError("validation:missing_api_response_body");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -35,7 +37,8 @@ export async function boundedJson(response: Response): Promise<unknown> {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > 1024 * 1024) throw new Error("API response exceeds 1 MiB");
+      if (size > 1024 * 1024)
+        throw new LocalizedError("validation:api_response_exceeds_1_mib");
       chunks.push(value);
     }
   } finally {
@@ -69,6 +72,9 @@ export async function api<K extends ContractName | "empty">(
   if (revision) headers["If-Match"] = JSON.stringify(revision);
   const response = await fetch(`/api/v1${path}`, {
     method,
+    // Read-only polling may overlap a reload. Let the browser finish it rather
+    // than turning document teardown into a WebKit access-control rejection.
+    keepalive: method === "GET",
     signal: AbortSignal.timeout(10_000),
     redirect: "error",
     cache: "no-store",
@@ -82,7 +88,8 @@ export async function api<K extends ContractName | "empty">(
       ? Payload<K>
       : never;
   if (response.status === 204) {
-    if (name !== "empty") throw new Error("Unexpected empty API response");
+    if (name !== "empty")
+      throw new LocalizedError("validation:unexpected_empty_api_response");
     return undefined as Result;
   }
   let data: unknown;
@@ -112,7 +119,8 @@ export async function api<K extends ContractName | "empty">(
     }
     throw new ApiFailure(response.status, detail, explicitUnknown);
   }
-  if (name === "empty") throw new Error("Unexpected API response body");
+  if (name === "empty")
+    throw new LocalizedError("validation:unexpected_api_response_body");
   return decode(name as ContractName, data) as Result;
 }
 export function validateFrame(
@@ -124,13 +132,17 @@ export function validateFrame(
   rtrDlc: number,
 ): FrameInput {
   if (!/^[0-9a-fA-F]+$/.test(idText))
-    throw new Error("Enter a hexadecimal ID without a prefix.");
+    throw new LocalizedError(
+      "validation:enter_a_hexadecimal_id_without_a_prefix",
+    );
   const id = Number.parseInt(idText, 16);
   if (!Number.isSafeInteger(id) || id > (extended ? 0x1fffffff : 0x7ff))
-    throw new Error("ID exceeds the selected width.");
+    throw new LocalizedError("validation:id_exceeds_the_selected_width");
   const data_hex = dataText.replace(/\s/g, "").toUpperCase();
   if (!/^(?:[0-9A-F]{2})*$/.test(data_hex))
-    throw new Error("Data must contain complete hexadecimal bytes.");
+    throw new LocalizedError(
+      "validation:data_must_contain_complete_hexadecimal_bytes",
+    );
   const length = data_hex.length / 2;
   if (kind === "classic_remote") {
     if (
@@ -140,15 +152,21 @@ export function validateFrame(
       rtrDlc < 0 ||
       rtrDlc > 8
     )
-      throw new Error("RTR requires an empty payload and DLC 0–8.");
+      throw new LocalizedError(
+        "validation:rtr_requires_an_empty_payload_and_dlc_0_8",
+      );
     return { kind, id, extended, brs: false, data_hex: "", dlc: rtrDlc };
   }
   if (kind === "classic_data" && (length > 8 || brs))
-    throw new Error("Classic CAN allows up to 8 bytes and no BRS.");
+    throw new LocalizedError(
+      "validation:classic_can_allows_up_to_8_bytes_and_no",
+    );
   if (
     kind === "fd_data" &&
     ![0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64].includes(length)
   )
-    throw new Error("Use an exact CAN FD wire length (up to 64 bytes).");
+    throw new LocalizedError(
+      "validation:use_an_exact_can_fd_wire_length_up_to",
+    );
   return { kind, id, extended, brs, data_hex };
 }

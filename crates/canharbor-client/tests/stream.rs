@@ -7,7 +7,12 @@ use futures_util::{SinkExt, StreamExt};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio_tungstenite::tungstenite::Message;
 fn directory() -> PathBuf {
-    PathBuf::from("/tmp").join(format!("ch-stream-{}", uuid::Uuid::new_v4().simple()))
+    std::path::PathBuf::from(if cfg!(windows) {
+        std::env::var_os("TEMP").expect("TEMP")
+    } else {
+        std::ffi::OsString::from("/tmp")
+    })
+    .join(format!("ch-stream-{}", uuid::Uuid::new_v4().simple()))
 }
 fn subscription() -> api::Subscribe {
     api::Subscribe {
@@ -109,10 +114,10 @@ async fn observer_receives_without_control_and_cancelled_wait_does_not_resubscri
 #[tokio::test]
 async fn malformed_and_oversized_streams_terminate_without_reconnect() {
     for payload in ["{}".to_owned(), "X".repeat(1024 * 1024 + 1), serde_json::json!({"type":"events","server_instance_id":"other","session_epoch":"other","events":[]}).to_string()] {
-        let dir = directory(); std::fs::create_dir(&dir).unwrap();
-        let listener = tokio::net::UnixListener::bind(dir.join("service.sock")).unwrap();
+        let dir = directory(); canharbor_platform::private::directory(&dir).unwrap();
+        let mut listener = canharbor_ipc::Listener::bind(&dir).unwrap();
         let peer = tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.unwrap();
+            let socket = listener.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
             assert!(matches!(ws.next().await, Some(Ok(Message::Text(_)))));
             let _ = ws.send(Message::Text(payload.into())).await;

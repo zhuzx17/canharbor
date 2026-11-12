@@ -222,6 +222,7 @@ name = "canharbor-api"
 version = "0.1.0-dev"
 dependencies = [
  "canharbor-core",
+ "canharbor-stress",
  "schemars",
  "serde",
  "serde_json",
@@ -246,9 +247,11 @@ dependencies = [
  "canharbor-gsusb",
  "canharbor-kvaser",
  "canharbor-peak",
+ "canharbor-platform",
  "canharbor-replay",
  "canharbor-server",
  "canharbor-slcan",
+ "canharbor-stress",
  "canharbor-virtual",
  "clap",
  "futures-util",
@@ -257,6 +260,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+ "windows-sys",
 ]
 
 [[package]]
@@ -265,9 +269,14 @@ version = "0.1.0-dev"
 dependencies = [
  "canharbor-api",
  "canharbor-core",
+ "canharbor-ipc",
+ "canharbor-platform",
  "canharbor-server",
  "canharbor-virtual",
  "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "reqwest",
  "serde",
  "serde_json",
@@ -280,8 +289,8 @@ dependencies = [
 name = "canharbor-core"
 version = "0.1.0-dev"
 dependencies = [
+ "canharbor-platform",
  "futures-util",
- "libc",
  "thiserror",
  "tokio",
 ]
@@ -292,6 +301,7 @@ version = "0.1.0-dev"
 dependencies = [
  "canharbor-core",
  "libc",
+ "sha2",
  "tokio",
 ]
 
@@ -314,6 +324,7 @@ version = "0.1.0-dev"
 dependencies = [
  "axum",
  "canharbor-core",
+ "canharbor-ipc",
  "canharbor-server",
  "futures-util",
  "http-body-util",
@@ -323,6 +334,17 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tower",
+]
+
+[[package]]
+name = "canharbor-ipc"
+version = "0.1.0-dev"
+dependencies = [
+ "canharbor-platform",
+ "libc",
+ "sha2",
+ "tokio",
+ "windows-sys",
 ]
 
 [[package]]
@@ -349,6 +371,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "canharbor-platform"
+version = "0.1.0-dev"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
+
+[[package]]
 name = "canharbor-replay"
 version = "0.1.0-dev"
 dependencies = [
@@ -366,6 +396,9 @@ dependencies = [
  "canharbor-api",
  "canharbor-capture",
  "canharbor-core",
+ "canharbor-ipc",
+ "canharbor-platform",
+ "canharbor-stress",
  "canharbor-tasks",
  "canharbor-virtual",
  "fs2",
@@ -377,6 +410,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -394,6 +428,25 @@ dependencies = [
  "libc",
  "thiserror",
  "tokio",
+ "windows-sys",
+]
+
+[[package]]
+name = "canharbor-stress"
+version = "0.1.0-dev"
+dependencies = [
+ "canharbor-core",
+ "canharbor-platform",
+ "canharbor-virtual",
+ "futures-util",
+ "libc",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

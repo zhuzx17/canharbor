@@ -336,6 +336,9 @@ impl PeakDriver {
     }
 }
 impl Driver for PeakDriver {
+    fn source_evidence(&self) -> Vec<canharbor_core::measurement::SourceEvidence> {
+        vec![self.api.library.source_evidence()]
+    }
     fn descriptors(&self) -> Vec<Descriptor> {
         self.devices
             .values()
@@ -757,6 +760,18 @@ mod tests {
         drop(second);
         assert!(unsafe { PeakDriver::load(&image(), &[0x51]) }.is_ok());
         let library = unsafe { Library::load(&image()) }.unwrap();
+        let source = library.source_evidence();
+        assert!(source.sha256.as_ref().is_some_and(|h| h.len() == 64));
+        assert!(source.bytes.unwrap() > 0);
+        assert!(!source.name.contains('/'));
+        assert_eq!(
+            source.sha256,
+            unsafe { Library::load(&image()) }
+                .unwrap()
+                .source_evidence()
+                .sha256
+        );
+
         assert!(unsafe { library.symbol::<unsafe extern "C" fn()>(c"missing_symbol") }.is_err());
         assert!(unsafe { Library::load(Path::new("relative.dylib")) }.is_err());
     }

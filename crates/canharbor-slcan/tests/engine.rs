@@ -73,7 +73,13 @@ fn engine() -> (Engine<Fake>, Arc<Mutex<State>>) {
     let state = Arc::new(Mutex::new(State::default()));
     let mut engine = Engine::new(Fake(state.clone()));
     assert!(engine.start(config(false), || Ok(())).is_err());
-    assert_eq!(engine.initialize().unwrap(), (2, 0x34));
+    assert_eq!(
+        engine.initialize().unwrap(),
+        canharbor_slcan::engine::FirmwareVersion::Lawicel {
+            hardware: 2,
+            software: 0x34
+        }
+    );
     (engine, state)
 }
 #[test]

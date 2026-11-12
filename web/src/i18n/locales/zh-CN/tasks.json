@@ -1,0 +1,4 @@
+{
+  "multiple_tasks_match_no_task_was_selected": "多个任务匹配，未选择任何任务。",
+  "use_1_6000_slots_an_interval_of_10_60000": "请使用 1–6000 个时隙、10–60000 ms 的间隔，且总时长不超过 60 秒。"
+}

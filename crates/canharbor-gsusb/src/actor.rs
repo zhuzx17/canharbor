@@ -35,6 +35,7 @@ enum Command {
         u8,
         Frame,
         Option<canharbor_core::control::Permit>,
+        Option<canharbor_core::measurement::SubmissionTrace>,
         Reply<u32>,
     ),
     State(u8, Reply<State>),
@@ -65,7 +66,8 @@ impl Handle {
         self.request(|r| Command::Stop(channel, r)).await
     }
     pub async fn transmit(&self, channel: u8, frame: Frame) -> Result<u32, Error> {
-        self.request(|r| Command::Tx(channel, frame, None, r)).await
+        self.request(|r| Command::Tx(channel, frame, None, None, r))
+            .await
     }
     pub async fn start_authorized(
         &self,
@@ -81,8 +83,21 @@ impl Handle {
         frame: Frame,
         permit: canharbor_core::control::Permit,
     ) -> Result<u32, Error> {
-        self.request(|r| Command::Tx(channel, frame, Some(permit), r))
+        self.request(|r| Command::Tx(channel, frame, Some(permit), None, r))
             .await
+    }
+    pub async fn transmit_observed(
+        &self,
+        channel: u8,
+        frame: Frame,
+        permit: canharbor_core::control::Permit,
+        trace: canharbor_core::measurement::SubmissionTrace,
+    ) -> Result<u32, Error> {
+        self.request(|r| {
+            trace.enqueued();
+            Command::Tx(channel, frame, Some(permit), Some(trace), r)
+        })
+        .await
     }
     pub async fn capabilities(&self) -> Result<Vec<crate::control::Capabilities>, Error> {
         self.request(Command::Info).await
@@ -150,9 +165,18 @@ impl Actor {
                                 let _ = r.send(device.stop(ch));
                             }
                         }
-                        Ok(Command::Tx(ch, f, permit, r)) => {
+                        Ok(Command::Tx(ch, f, permit, trace, r)) => {
+                            if let Some(t) = &trace {
+                                t.worker_started();
+                            }
                             if !r.is_closed() {
+                                if let Some(t) = &trace {
+                                    t.call_started("device_worker_submit");
+                                }
                                 let result = device.transmit_checked(ch, f, permit.as_ref());
+                                if let Some(t) = &trace {
+                                    t.call_completed();
+                                }
                                 if matches!(result, Err(Error::EchoTimeout)) {
                                     fault = Some(Error::EchoTimeout);
                                 }

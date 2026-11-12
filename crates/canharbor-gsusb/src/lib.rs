@@ -25,6 +25,8 @@ pub enum Error {
     EchoTimeout,
     #[error("transport failed; submitted transmission outcome may be unknown")]
     Transport,
+    #[error("USB {stage} failed: {detail}")]
+    UsbAccess { stage: &'static str, detail: String },
     #[error(transparent)]
     Frame(#[from] canharbor_core::Error),
 }

@@ -28,6 +28,13 @@ Only the virtual path has browser end-to-end evidence. A fake USB transport test
 the authenticated HTTP-to-runtime-to-actor path, metadata, receipts and cleanup.
 Actual adapter/firmware, hotplug and sleep/wake acceptance remain unverified.
 
-Capability detail endpoints, config revision changes, timestamp/diagnostic stream
-extensions, TX receipt querying and richer shutdown diagnostics are separate
-remaining tasks. No physical CAN network was accessed during development.
+Capability queries, revision-guarded configuration, timestamp/diagnostic streams,
+TX receipt querying and shutdown diagnostics are implemented. See
+[channel configuration](channel-configuration.md), [device diagnostics](device-diagnostics.md)
+and [transmission receipts](transmission-receipts.md). These interfaces report
+backend declarations and observations; no physical CAN network was accessed during development.
+
+The workbench's **Connect a hardware adapter** guide explains discovery and
+explicit startup options for each backend. Its list contains registered service
+channels, not every attached USB device. Discovery commands and diagnostic export
+are read-only; running a generated startup command explicitly opens the selected adapter.

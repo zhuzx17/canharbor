@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Same-user Unix-domain HTTP client. No implicit acquisition or TX retry.
+//! Same-user local HTTP client (Unix socket or Windows Named Pipe). No implicit acquisition or TX retry.
 pub use canharbor_api as api;
 mod periodic;
 mod stream;
+mod transport;
 pub use periodic::{AmbiguousTask, TaskStartUnknown};
 use serde_json::Value;
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 pub use stream::{EventStream, StreamUnavailable};
 use uuid::Uuid;
 /// Structured error returned by an authenticated service response.
@@ -56,7 +57,7 @@ impl std::error::Error for ApiFailure {}
 const JSON_LIMIT: usize = 1024 * 1024;
 /// The local service could not be reached, or its transport ended early.
 #[derive(Debug)]
-pub struct ServiceUnavailable(pub reqwest::Error);
+pub struct ServiceUnavailable(pub transport::Error);
 impl std::fmt::Display for ServiceUnavailable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -68,7 +69,7 @@ impl std::fmt::Display for ServiceUnavailable {
 }
 impl std::error::Error for ServiceUnavailable {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.0)
+        Some(self.0.as_ref())
     }
 }
 #[derive(Debug)]
@@ -90,19 +91,14 @@ impl std::error::Error for ResourceLimit {}
 /// Cloning a client shares its native identity; `new` creates an independent one.
 #[derive(Clone)]
 pub struct LocalClient {
-    http: reqwest::Client,
+    http: transport::Client,
     dir: PathBuf,
     id: String,
 }
 impl LocalClient {
     pub fn new(dir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
-            http: reqwest::Client::builder()
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .unix_socket(dir.join("service.sock"))
-                .timeout(Duration::from_secs(10))
-                .build()?,
+            http: transport::Client::new(dir.clone()),
             dir,
             id: Uuid::new_v4().to_string(),
         })
@@ -306,7 +302,6 @@ impl LocalClient {
         id: Uuid,
         output: PathBuf,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use std::os::unix::fs::OpenOptionsExt;
         use tokio::io::AsyncWriteExt;
         let mut response = self
             .http
@@ -338,11 +333,7 @@ impl LocalClient {
                 let _ = std::fs::remove_file(&self.0);
             }
         }
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)?;
+        let file = canharbor_platform::private::create_new(&temporary)?;
         let cleanup = Cleanup(temporary);
         let mut file = tokio::fs::File::from_std(file);
         let mut received = 0u64;

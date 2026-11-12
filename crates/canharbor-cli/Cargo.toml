@@ -15,18 +15,17 @@ slcan = ["dep:canharbor-slcan"]
 kvaser = ["dep:canharbor-kvaser", "dep:canharbor-driver"]
 peak = ["dep:canharbor-peak", "dep:canharbor-driver"]
 [dependencies]
+canharbor-platform = { path = "../canharbor-platform" }
+canharbor-stress = {path="../canharbor-stress"}
 libc = "0.2"
 canharbor-replay = { path = "../canharbor-replay" }
 canharbor-client = { path = "../canharbor-client" }
-canharbor-kvaser = { path = "../canharbor-kvaser", optional = true }
-canharbor-peak = { path = "../canharbor-peak", optional = true }
-canharbor-driver = { path = "../canharbor-driver", optional = true }
 canharbor-core.workspace = true
 canharbor-slcan = { path = "../canharbor-slcan", optional = true }
 canharbor-gsusb = { path = "../canharbor-gsusb" }
 canharbor-virtual.workspace = true
 canharbor-server.workspace = true
-tokio.workspace = true
+tokio = {workspace=true,features=["process"]}
 serde_json.workspace = true
 uuid.workspace = true
 futures-util.workspace = true
@@ -35,3 +34,11 @@ tokio-tungstenite = "0.29"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["process"] }
+
+[target.'cfg(unix)'.dependencies]
+canharbor-kvaser = { path = "../canharbor-kvaser", optional = true }
+canharbor-peak = { path = "../canharbor-peak", optional = true }
+canharbor-driver = { path = "../canharbor-driver", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version="0.61.2", features=["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Console"] }

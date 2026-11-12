@@ -12,11 +12,14 @@
     "format": "prettier --write src tests *.ts index.html ../scripts/*.mjs",
     "format:check": "prettier --check src tests *.ts index.html ../scripts/*.mjs",
     "api:generate": "bun ../scripts/generate-api.mjs",
-    "api:check": "bun ../scripts/generate-api.mjs --check"
+    "api:check": "bun ../scripts/generate-api.mjs --check",
+    "i18n:check": "bun ../scripts/check-i18n.mjs && bun ../scripts/test-i18n.mjs"
   },
   "dependencies": {
+    "i18next": "^27.0.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-i18next": "^18.0.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -160,6 +160,16 @@ class Client:
     def devices(self):
         return self.request("GET", "/devices")
 
+    def native_features(self):
+        """Inspect local ABI extensions without contacting or opening a device."""
+        return {
+            "abi_major": self._lib.canharbor_abi_version(),
+            "query": hasattr(self._lib, "canharbor_request_with_query"),
+            "capture_download": hasattr(self._lib, "canharbor_capture_download"),
+            "event_stream": all(hasattr(self._lib, name) for name in (
+                "canharbor_stream_open", "canharbor_stream_next", "canharbor_stream_close")),
+        }
+
     def create(self, channel: str, *, bitrate: int = 500000,
                active: bool = False, data_bitrate: Optional[int] = None):
         config = {"mode": "active" if active else "listen_only", "nominal_bitrate": bitrate}

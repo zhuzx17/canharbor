@@ -52,3 +52,9 @@ The Rust ABI declarations in canharbor-kvaser/src/ffi.rs are adapted under
 BSD-3-Clause. Original CANHarbor adapter code is AGPL-3.0-or-later.
 No native driver binary is included. Users install a trusted compatible
 open-source libKvaserUSB separately. Provenance: docs/kvaser-provenance.json.
+
+Browser localization dependencies
+--------------------------------
+i18next 27.0.1, react-i18next 18.0.1 and html-parse-stringify 4.0.1 are
+used through the browser dependency graph. License: MIT. Their full licenses
+are retained in LICENSES/<package>-MIT.txt. Exact versions are in web/bun.lock.

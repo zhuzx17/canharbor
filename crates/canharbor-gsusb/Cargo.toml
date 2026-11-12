@@ -13,6 +13,7 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+canharbor-ipc = { path = "../canharbor-ipc" }
 canharbor-server.workspace = true
 serde_json.workspace = true
 tower = { version = "0.5", features = ["util"] }

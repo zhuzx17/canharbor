@@ -37,7 +37,7 @@ fn report(o: &Output) -> Value {
     })
 }
 async fn setup() -> (PathBuf, Arc<VirtualBus>, RunningServer) {
-    let root = PathBuf::from("/tmp").join(format!("ch-seq-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-seq-{}", uuid::Uuid::new_v4().simple()));
     let bus = Arc::new(VirtualBus::default());
     let service = RunningServer::start(Runtime::new(bus.clone()), &root, 0, false)
         .await
@@ -186,6 +186,7 @@ async fn missing_duplicate_and_out_of_order_sequences_are_reported() {
     );
     clean(root, service).await;
 }
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancellation_and_device_fault_do_not_leave_a_running_receiver() {
     for fault in [false, true] {
@@ -264,6 +265,7 @@ async fn ranges_and_schedules_are_rejected_before_device_configuration() {
     clean(root, service).await;
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelling_sender_prevents_later_sequence_submissions() {
     use canharbor_core::Backend;
@@ -358,4 +360,12 @@ async fn foreground_receiver_renews_control_and_cleans_up_at_its_deadline() {
     assert_eq!(rx["missing"], 1);
     assert!(rx["cleanup_error"].is_null());
     clean(root, service).await;
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    }
 }

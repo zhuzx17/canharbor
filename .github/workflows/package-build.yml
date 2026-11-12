@@ -1,0 +1,69 @@
+name: Build and verify packages
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Optional exact tag to build'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: macos-arm64
+          - os: ubuntu-latest
+            platform: linux-x86_64
+          - os: windows-2025
+            platform: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Verify requested release tag
+        if: inputs.tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*) ;;
+            *) echo 'Release tags must start with v followed by a digit.' >&2; exit 1 ;;
+          esac
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --cwd web --frozen-lockfile
+      - run: bun run --cwd web build
+      - run: cargo build --release -p canharbor-cli --features web-ui,slcan --locked
+        env:
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+      - name: Package binary and matching source
+        env:
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+        run: python scripts/package.py --platform "$PACKAGE_PLATFORM"
+      - name: Verify archives and smoke-test extracted package
+        timeout-minutes: 5
+        env:
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+        run: python scripts/verify-package.py --platform "$PACKAGE_PLATFORM"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: canharbor-${{ matrix.platform }}
+          path: dist/packages/*
+          if-no-files-found: error

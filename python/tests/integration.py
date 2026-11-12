@@ -6,6 +6,7 @@ from canharbor import Client, CanHarborError, TaskStartUnknown
 runtime, library = sys.argv[1:]
 with Client(runtime, library=library) as first, Client(runtime, library=library) as other:
     assert first.devices()["devices"]
+    assert first.native_features() == {"abi_major": 1, "query": True, "event_stream": True, "capture_download": True}
     session = first.create("virtual:0", active=True)["id"]
     acquired = first.acquire(session)
     generation = acquired["generation"]

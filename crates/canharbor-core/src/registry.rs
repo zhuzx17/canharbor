@@ -31,6 +31,23 @@ impl Registry {
     }
 }
 impl Backend for Registry {
+    fn source_evidence(&self, ch: &str) -> Vec<crate::measurement::SourceEvidence> {
+        self.route(ch)
+            .map_or_else(|_| vec![], |b| b.source_evidence(ch))
+    }
+    fn submit_observed<'a>(
+        &'a self,
+        ch: &'a str,
+        f: Frame,
+        p: Permit,
+        t: crate::measurement::SubmissionTrace,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(async move { self.route(ch)?.submit_observed(ch, f, p, t).await })
+    }
+
+    fn cleanup_observation(&self, ch: &str) -> Option<crate::CloseSummary> {
+        self.route(ch).ok()?.cleanup_observation(ch)
+    }
     fn channels(&self) -> Vec<Channel> {
         self.backends.iter().flat_map(|b| b.channels()).collect()
     }

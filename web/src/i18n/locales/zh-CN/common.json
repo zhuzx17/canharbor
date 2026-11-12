@@ -1,0 +1,10 @@
+{
+  "language": "语言",
+  "auto": "自动",
+  "saveFailed": "语言已切换，但偏好未能保存。",
+  "workspace": "总线工作台",
+  "recordings": "录制",
+  "offline": "离线分析",
+  "stress": "压力测试",
+  "about": "关于与源码"
+}

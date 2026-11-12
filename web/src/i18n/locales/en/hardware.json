@@ -1,0 +1,19 @@
+{
+  "connect_a_hardware_adapter": "Connect a hardware adapter",
+  "the_channel_list_shows_adapters_registered_by_this_service": "The channel list shows adapters registered by this service, not all plugged-in devices. Refreshing does not open USB devices. Hardware compatibility is unverified.",
+  "adapter_backend": "Adapter backend",
+  "gs_usb_usb": "gs_usb (USB)",
+  "slcan_serial": "SLCAN (serial)",
+  "1_find_your_adapter_s_vendor_product_id_then": "1. Find your adapter's vendor/product ID, then enumerate it without opening a channel:",
+  "2_use_the_reported_index_interface_and_alternate_setting": "2. Use the reported index, interface and alternate setting. The index can change after reconnecting; verify the device identity each time.",
+  "find_the_serial_device_path_and_firmware_s_serial": "Find the serial device path and firmware's serial baud rate. Choose the firmware dialect explicitly; serial baud is separate from CAN bitrate.",
+  "for_canable_fd_firmware_use_slcan_profile_canable_fd": "For CANable FD firmware use --slcan-profile canable-fd. This requires a build with the slcan backend.",
+  "install_the_vendor_s_compatible_native_library_for_this": "Install the vendor's compatible native library for this system, then enumerate channels. Requires a build with the ",
+  "backend": " backend.",
+  "replace_the_uppercase_placeholders_with_your_device_values_stop": "Replace the uppercase placeholders with your device values. Stop the current service before starting it with new hardware options. Opening an adapter is an explicit action; these instructions do not execute commands.",
+  "not_listed_by_discovery_check_cable_power_device_id": "Not listed by discovery: check cable, power, device ID and OS access.",
+  "discovered_but_no_channel_here_check_service_startup_options": "Discovered but no channel here: check service startup options and compiled backend support.",
+  "channel_listed_but_cannot_open_inspect_firmware_capability_and": "Channel listed but cannot open: inspect firmware, capability and library errors; registration does not prove availability.",
+  "read_only_diagnostic_export": "Read-only diagnostic export:",
+  "review_device_labels_before_sharing": ". Review device labels before sharing."
+}

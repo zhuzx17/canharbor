@@ -54,7 +54,11 @@ impl Candidate {
         self.info.serial_number()
     }
     pub fn open(self, interface: u8, alternate: u8) -> Result<UsbTransport, Error> {
-        let device = self.info.open().wait().map_err(|_| Error::Transport)?;
+        let device = self
+            .info
+            .open()
+            .wait()
+            .map_err(|e| access_error("open", &e))?;
         let selected = select_endpoints(
             &device
                 .active_configuration()
@@ -66,7 +70,7 @@ impl Candidate {
         let claimed = device
             .claim_interface(interface)
             .wait()
-            .map_err(|_| Error::Transport)?;
+            .map_err(|e| access_error("claim interface", &e))?;
         if claimed.get_alt_setting() != alternate {
             claimed
                 .set_alt_setting(alternate)
@@ -287,6 +291,18 @@ impl ReceiveTransport for UsbTransport {
             self.poisoned = true;
         }
         result.map(|bytes| if bytes.is_empty() { None } else { Some(bytes) })
+    }
+}
+
+fn access_error(stage: &'static str, error: &impl std::fmt::Display) -> Error {
+    let hint = if cfg!(windows) {
+        "; Windows requires WinUSB on the selected gs_usb interface. Check the device/interface and its driver in Device Manager; CANHarbor never replaces drivers automatically"
+    } else {
+        ""
+    };
+    Error::UsbAccess {
+        stage,
+        detail: format!("{error}{hint}"),
     }
 }
 

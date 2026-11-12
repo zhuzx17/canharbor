@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+#![cfg(unix)]
 use canharbor_core::runtime::Runtime;
 use canharbor_server::local::RunningServer;
 use canharbor_virtual::VirtualBus;
 use serde_json::Value;
-use std::{
-    os::unix::fs::DirBuilderExt, path::PathBuf, process::Command, sync::Arc, time::Duration,
-};
+use std::{os::unix::fs::DirBuilderExt, process::Command, sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 async fn request_bytes(socket: &mut tokio::net::UnixStream) -> Vec<u8> {
     let mut bytes = vec![];
@@ -44,9 +43,8 @@ async fn lost_task_start_response_is_recovered_without_another_admission() {
     lost_response(2).await;
 }
 async fn lost_response(mode: u8) {
-    let root = PathBuf::from("/tmp").join(format!("ch-recover-{}", uuid::Uuid::new_v4().simple()));
-    let proxy_root =
-        PathBuf::from("/tmp").join(format!("ch-proxy-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-recover-{}", uuid::Uuid::new_v4().simple()));
+    let proxy_root = test_temp_dir().join(format!("ch-proxy-{}", uuid::Uuid::new_v4().simple()));
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&proxy_root)
@@ -255,4 +253,12 @@ async fn lost_response(mode: u8) {
     assert!(server.shutdown().await.failures.is_empty());
     let _ = std::fs::remove_dir_all(root);
     std::fs::remove_dir_all(proxy_root).unwrap();
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    }
 }

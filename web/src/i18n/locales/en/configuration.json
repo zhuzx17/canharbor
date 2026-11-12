@@ -1,0 +1,5 @@
+{
+  "summary": "{{mode}} · {{nominal}} bit/s · {{protocol}}",
+  "classic": "Classic CAN",
+  "fd": "CAN FD {{rate}} bit/s"
+}

@@ -1,0 +1,7 @@
+{
+  "operation_recovery": "操作恢复",
+  "dismiss_error": "关闭错误提示",
+  "refresh_recordings": "刷新录制",
+  "refresh_stress_status": "刷新压测状态",
+  "check_connection_and_session_status": "检查连接与会话状态"
+}

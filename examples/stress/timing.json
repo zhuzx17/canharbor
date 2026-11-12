@@ -1,0 +1,21 @@
+{
+  "sender": "virtual:0",
+  "receivers": ["virtual:1"],
+  "can_id": 291,
+  "extended": false,
+  "run_tag": 2077,
+  "count": 100,
+  "fps": 100,
+  "bitrate": 500000,
+  "receivers_active": true,
+  "drain_ms": 200,
+  "timing": { "sample_every": 1, "max_pending": 128 },
+  "topology": {
+    "bus": "Virtual bench",
+    "wiring": "Software simulation; no electrical topology assertion",
+    "aliases": [
+      { "channel": "virtual:0", "alias": "TX A" },
+      { "channel": "virtual:1", "alias": "RX B" }
+    ]
+  }
+}

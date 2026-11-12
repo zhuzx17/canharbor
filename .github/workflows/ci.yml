@@ -8,11 +8,12 @@ permissions:
 jobs:
   check:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1
@@ -20,13 +21,16 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.2'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.13'
       - run: bun install --cwd web --frozen-lockfile
+      - run: bun run --cwd web i18n:check
       - run: bun run --cwd web api:check
       - run: bun run --cwd web format:check
       - run: bun run --cwd web build
+      - run: python3 scripts/test-package.py
+      - run: python3 scripts/test-draft-release-check.py
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --all-features --locked
@@ -34,3 +38,53 @@ jobs:
       - run: bun x --bun playwright install --with-deps chromium
         working-directory: web
       - run: bun run --cwd web test:e2e
+      - run: bun x --bun playwright install webkit
+        if: matrix.os == 'macos-latest'
+        working-directory: web
+      - run: bun run --cwd web test:e2e i18n.spec.ts i18n-core.spec.ts i18n-data.spec.ts i18n-stress.spec.ts i18n-acceptance.spec.ts navigation.spec.ts usability-improvements.spec.ts workbench.spec.ts session-configuration.spec.ts
+        if: matrix.os == 'macos-latest'
+        env:
+          CANHARBOR_BROWSER: webkit
+          CANHARBOR_TEST_RUNTIME: /tmp/canharbor-playwright-webkit
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
+        with:
+          name: playwright-results-${{ matrix.os }}
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --cwd web --frozen-lockfile
+      - run: bun run --cwd web build
+      - run: python scripts/test-package.py
+      - run: python scripts/test-draft-release-check.py
+      - run: cargo test --workspace --exclude canharbor-peak --exclude canharbor-kvaser --features canharbor-cli/slcan,canharbor-cli/web-ui --locked
+      - run: cargo clippy --workspace --exclude canharbor-peak --exclude canharbor-kvaser --all-targets --features canharbor-cli/slcan,canharbor-cli/web-ui --locked -- -D warnings
+      - run: cargo build -p canharbor-cli --features web-ui,slcan --locked
+      - run: bun x --bun playwright install chromium
+        working-directory: web
+      - run: bun run --cwd web test:e2e
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
+        with:
+          name: playwright-results-windows
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  package-smoke:
+    uses: ./.github/workflows/package-build.yml

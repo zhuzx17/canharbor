@@ -16,14 +16,17 @@ pub enum Command {
         #[command(flatten)]
         options: Options,
         #[arg(long)]
+        #[arg(help = "Explicitly authorize active CAN operation; sending requires this flag")]
         active: bool,
         #[arg(long, default_value_t=10, value_parser=clap::value_parser!(u32).range(10..=60000))]
+        #[arg(help = "Interval between planned frames in milliseconds")]
         interval_ms: u32,
     },
     /// Receive matching RX frames; defaults to listen-only.
     Receive {
         /// Enable controller participation (including ACK); never sends test data.
         #[arg(long)]
+        #[arg(help = "Enable receiver participation in CAN ACK; does not send test data")]
         active: bool,
         #[command(flatten)]
         options: Options,
@@ -34,26 +37,33 @@ pub enum Command {
 #[derive(Args)]
 pub struct Options {
     #[arg(long)]
+    #[arg(help = "Channel ID from canharbor devices, for example virtual:0")]
     channel: String,
     /// CAN identifier as hexadecimal without 0x.
     #[arg(long, value_parser=parse_hex)]
     id: u32,
     #[arg(long)]
+    #[arg(help = "Use a 29-bit identifier instead of the default 11-bit identifier")]
     extended: bool,
     /// Caller-selected hexadecimal test tag. Use the same value at both ends.
     #[arg(long, value_parser=parse_hex)]
     run_id: u32,
     #[arg(long, default_value_t=100, value_parser=clap::value_parser!(u32).range(1..=6000))]
+    #[arg(help = "Maximum number of frames; see the command description for bounds")]
     count: u32,
     #[arg(long, default_value_t = 0)]
     first: u32,
     #[arg(long, default_value_t = 500000)]
+    #[arg(help = "Nominal CAN bitrate in bit/s, for example 500000")]
     bitrate: u32,
     #[arg(long)]
+    #[arg(help = "Enable CAN FD in this session")]
     fd: bool,
     #[arg(long, requires = "fd", default_value_t = 2000000)]
+    #[arg(help = "CAN FD data bitrate in bit/s; requires --fd (default 2000000)")]
     data_bitrate: u32,
     #[arg(long, requires = "fd")]
+    #[arg(help = "Use CAN FD bit-rate switching; requires --fd")]
     brs: bool,
 }
 fn parse_hex(value: &str) -> std::result::Result<u32, String> {
@@ -400,10 +410,17 @@ async fn execute(
             _ => return Err("missing stream greeting".into()),
         }
         client.running(id, generation, true).await?;
-        eprintln!(
-            "sequence receiver ready: run {:08X}, channel {}",
-            options.run_id, options.channel
-        );
+        if crate::i18n::chinese() {
+            eprintln!(
+                "序列接收端已就绪：运行 {:08X}，通道 {}",
+                options.run_id, options.channel
+            );
+        } else {
+            eprintln!(
+                "sequence receiver ready: run {:08X}, channel {}",
+                options.run_id, options.channel
+            );
+        }
         loop {
             match stream.next().await? {
                 Some(api::StreamMessage::Events { events, .. }) => {

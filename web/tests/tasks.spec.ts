@@ -1,17 +1,15 @@
+import { nativeBinary, nativeRuntime } from "./native";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { readTaskAttempts, recoverTask, validateTaskPlan } from "../src/tasks";
 import type { PeriodicTask } from "../src/generated/api";
-const runtime =
-  process.env.CANHARBOR_TEST_RUNTIME ?? "/tmp/canharbor-playwright";
+const runtime = nativeRuntime;
 const cli = (...args: string[]) =>
-  execFileSync(
-    resolve("../target/debug/canharbor"),
-    ["--runtime-dir", runtime, ...args],
-    { encoding: "utf8" },
-  ).trim();
+  execFileSync(nativeBinary, ["--runtime-dir", runtime, ...args], {
+    encoding: "utf8",
+  }).trim();
 async function ready(page: Page) {
   await page.goto(cli("web", "open", "--print"));
   await expect(page.getByText("Browser paired", { exact: true })).toBeVisible();
@@ -115,7 +113,7 @@ test("task creation, cancellation and renewal use the existing acquired lease", 
   await ready(page);
   const panel = page.locator(".task-panel");
   await page
-    .getByRole("spinbutton", { name: "Task slots", exact: true })
+    .getByRole("spinbutton", { name: "Frame count", exact: true })
     .fill("2");
   await page
     .getByRole("spinbutton", { name: "Task interval", exact: true })
@@ -165,7 +163,7 @@ test("lost admission response is recovered after reload without resubmission or 
   await ready(page);
   const panel = page.locator(".task-panel");
   await page
-    .getByRole("spinbutton", { name: "Task slots", exact: true })
+    .getByRole("spinbutton", { name: "Frame count", exact: true })
     .fill("1");
   await page
     .getByRole("spinbutton", { name: "Task interval", exact: true })
@@ -207,13 +205,13 @@ test("lost admission response is recovered after reload without resubmission or 
   ]);
   await closeSession(page);
 });
-test("disconnection stops renewal and recovery never infers a safe resend from absent results", async ({
+test("task read failures preserve renewal and recovery never infers a safe resend from absent results", async ({
   page,
 }) => {
   await ready(page);
   const panel = page.locator(".task-panel");
   await page
-    .getByRole("spinbutton", { name: "Task slots", exact: true })
+    .getByRole("spinbutton", { name: "Frame count", exact: true })
     .fill("1");
   await page
     .getByRole("spinbutton", { name: "Task interval", exact: true })
@@ -233,11 +231,13 @@ test("disconnection stops renewal and recovery never infers a safe resend from a
     route.fulfill({ status: 503, json: {} }),
   );
   await expect(
-    page.getByRole("button", { name: "Start periodic task", exact: true }),
-  ).toBeDisabled();
-  const stopped = renewals;
-  await page.waitForTimeout(5500);
-  expect(renewals).toBe(stopped);
+    page.getByRole("alert", { name: "Operation recovery" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("You have control", { exact: true }),
+  ).toBeVisible();
+  const before = renewals;
+  await expect.poll(() => renewals, { timeout: 9000 }).toBeGreaterThan(before);
   await page.unroute("**/api/v1/tasks");
   await page.route("**/api/v1/tasks", (route) =>
     route.fulfill({ status: 200, json: { tasks: [] } }),
@@ -263,7 +263,7 @@ test("stop/restart and service instance changes never replay a task or restore c
     if (r.method() === "POST" && r.url().endsWith("/lease/renew")) renewals++;
   });
   await page
-    .getByRole("spinbutton", { name: "Task slots", exact: true })
+    .getByRole("spinbutton", { name: "Frame count", exact: true })
     .fill("2");
   await page
     .getByRole("spinbutton", { name: "Task interval", exact: true })
@@ -307,7 +307,7 @@ test("a lost cancellation response is reconciled by reading the final state with
   await ready(page);
   const panel = page.locator(".task-panel");
   await page
-    .getByRole("spinbutton", { name: "Task slots", exact: true })
+    .getByRole("spinbutton", { name: "Frame count", exact: true })
     .fill("2");
   await page
     .getByRole("spinbutton", { name: "Task interval", exact: true })

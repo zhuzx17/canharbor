@@ -11,7 +11,12 @@ struct Service {
 impl Drop for Service {
     fn drop(&mut self) {
         if matches!(self.child.try_wait(), Ok(None)) {
-            unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGINT) };
+            #[cfg(windows)]
+            let _ = self.child.kill();
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(self.child.id() as libc::pid_t, libc::SIGINT)
+            };
         }
         let _ = self.child.wait();
         let _ = std::fs::remove_dir_all(&self.root);
@@ -33,7 +38,7 @@ fn cli(root: &Path, args: &[&str]) -> serde_json::Value {
 }
 #[test]
 fn a_new_cli_process_can_inspect_a_receipt_after_send_closes_its_session() {
-    let root = PathBuf::from("/tmp").join(format!("ch-receipt-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-receipt-{}", uuid::Uuid::new_v4().simple()));
     let child = Command::new(env!("CARGO_BIN_EXE_canharbor"))
         .arg("--runtime-dir")
         .arg(&root)
@@ -44,7 +49,15 @@ fn a_new_cli_process_can_inspect_a_receipt_after_send_closes_its_session() {
         .unwrap();
     let mut service = Service { child, root };
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !canharbor_server::local::socket_path(&service.root).exists() {
+    while !Command::new(env!("CARGO_BIN_EXE_canharbor"))
+        .arg("--runtime-dir")
+        .arg(&service.root)
+        .arg("devices")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+    {
         assert!(
             service.child.try_wait().unwrap().is_none(),
             "service exited"
@@ -92,4 +105,12 @@ fn a_new_cli_process_can_inspect_a_receipt_after_send_closes_its_session() {
     );
     assert_eq!(submitted, queried);
     assert_eq!(queried["state"], "submitted");
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    }
 }

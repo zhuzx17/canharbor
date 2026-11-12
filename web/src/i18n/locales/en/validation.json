@@ -1,0 +1,12 @@
+{
+  "missing_api_response_body": "Missing API response body",
+  "api_response_exceeds_1_mib": "API response exceeds 1 MiB",
+  "unexpected_empty_api_response": "Unexpected empty API response",
+  "unexpected_api_response_body": "Unexpected API response body",
+  "enter_a_hexadecimal_id_without_a_prefix": "Enter a hexadecimal ID without a prefix.",
+  "id_exceeds_the_selected_width": "ID exceeds the selected width.",
+  "data_must_contain_complete_hexadecimal_bytes": "Data must contain complete hexadecimal bytes.",
+  "rtr_requires_an_empty_payload_and_dlc_0_8": "RTR requires an empty payload and DLC 0–8.",
+  "classic_can_allows_up_to_8_bytes_and_no": "Classic CAN allows up to 8 bytes and no BRS.",
+  "use_an_exact_can_fd_wire_length_up_to": "Use an exact CAN FD wire length (up to 64 bytes)."
+}

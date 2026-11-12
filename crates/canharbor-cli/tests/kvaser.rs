@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-#![cfg(feature = "kvaser")]
+#![cfg(all(unix, feature = "kvaser"))]
 use std::{
     io::Read,
     os::unix::fs::DirBuilderExt,
@@ -37,7 +37,7 @@ fn cli(root: &Path, args: &[&str]) -> String {
 }
 #[test]
 fn explicit_kvaser_library_runs_through_service_cli_and_native_abi_without_hardware() {
-    let root = PathBuf::from("/tmp").join(format!("ch-kv-{}", uuid::Uuid::new_v4().simple()));
+    let root = test_temp_dir().join(format!("ch-kv-{}", uuid::Uuid::new_v4().simple()));
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&root)
@@ -164,4 +164,12 @@ fn explicit_kvaser_library_runs_through_service_cli_and_native_abi_without_hardw
     ))
     .unwrap();
     assert_eq!(receipt["confirmation"], "backend_submitted");
+}
+
+fn test_temp_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        std::path::PathBuf::from("/tmp")
+    }
 }

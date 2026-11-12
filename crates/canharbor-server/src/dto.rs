@@ -4,6 +4,9 @@ pub use canharbor_api::*;
 pub fn capture(info: crate::capture::Info) -> Capture {
     use crate::capture::Status;
     Capture {
+        name: info.name,
+        channel_id: info.channel_id,
+        created_unix_ms: info.created_unix_ms,
         id: info.id,
         session_id: info.session_id,
         state: match info.state {

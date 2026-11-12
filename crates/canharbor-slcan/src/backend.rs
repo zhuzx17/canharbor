@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! One owned serial worker, bounded requests, and execution-time authorization.
 use crate::{
-    BITRATES,
+    Profile,
     engine::{Engine, Error as EngineError},
     serial::Transport,
 };
@@ -29,6 +29,7 @@ enum Operation {
     Transmit(Frame, Permit),
 }
 struct Request {
+    trace: Option<canharbor_core::measurement::SubmissionTrace>,
     operation: Operation,
     reply: oneshot::Sender<Result<(), Error>>,
 }
@@ -39,6 +40,7 @@ struct Shared {
     events: broadcast::Sender<Arc<BackendEvent>>,
 }
 pub struct SlcanBackend {
+    profile: Profile,
     id: String,
     device: String,
     shared: Arc<Shared>,
@@ -128,6 +130,17 @@ impl SlcanBackend {
         device: String,
         polling: bool,
     ) -> Result<Self, Error> {
+        Self::open_with_profile(transport, device, polling, Profile::Lawicel).await
+    }
+    pub async fn open_with_profile<T: Transport>(
+        transport: T,
+        device: String,
+        polling: bool,
+        profile: Profile,
+    ) -> Result<Self, Error> {
+        if polling && profile == Profile::CanableFd {
+            return Err(Error::Unsupported);
+        }
         if device.is_empty()
             || device.len() > 64
             || !device
@@ -148,7 +161,7 @@ impl SlcanBackend {
         let worker = thread::Builder::new()
             .name("canharbor-slcan".into())
             .spawn(move || {
-                let mut engine = Engine::new(transport);
+                let mut engine = Engine::with_profile(transport, profile);
                 if let Err(error) = engine.initialize() {
                     let _ = ready_tx.send(Err(map(error)));
                     return CloseSummary {
@@ -168,7 +181,14 @@ impl SlcanBackend {
                         Duration::from_millis(20)
                     }) {
                         Ok(request) => {
-                            let Request { operation, reply } = request;
+                            let Request {
+                                operation,
+                                reply,
+                                trace,
+                            } = request;
+                            if let Some(t) = &trace {
+                                t.worker_started();
+                            }
                             if reply.is_closed()
                                 && !matches!(operation, Operation::Stop | Operation::Close)
                             {
@@ -179,9 +199,7 @@ impl SlcanBackend {
                                 Operation::Configure(value) => {
                                     if permit.is_some() {
                                         Err(Error::InvalidState)
-                                    } else if value.data_bitrate.is_some()
-                                        || !BITRATES.contains(&value.nominal_bitrate)
-                                    {
+                                    } else if profile.validate_config(value).is_err() {
                                         Err(Error::Unsupported)
                                     } else {
                                         config = Some(value);
@@ -216,7 +234,10 @@ impl SlcanBackend {
                                     if permit.is_none() {
                                         Err(Error::InvalidState)
                                     } else {
-                                        engine
+                                        if let Some(t) = &trace {
+                                            t.call_started("device_worker_submit");
+                                        }
+                                        let result = engine
                                             .transmit(&frame, || {
                                                 if state.closing.load(Ordering::Acquire)
                                                     || reply.is_closed()
@@ -225,7 +246,11 @@ impl SlcanBackend {
                                                 }
                                                 control.check()
                                             })
-                                            .map_err(map)
+                                            .map_err(map);
+                                        if let Some(t) = &trace {
+                                            t.call_completed();
+                                        }
+                                        result
                                     }
                                 }
                             };
@@ -265,7 +290,9 @@ impl SlcanBackend {
                             control.check()
                         };
                         let result = engine.poll(polling, guard).and_then(|()| {
-                            if status_at.elapsed() >= Duration::from_millis(100) {
+                            if profile == Profile::Lawicel
+                                && status_at.elapsed() >= Duration::from_millis(100)
+                            {
                                 status_at = Instant::now();
                                 engine.status(guard)
                             } else {
@@ -305,6 +332,7 @@ impl SlcanBackend {
             })
             .map_err(|_| Error::Fault(BackendFault::Disconnected))?;
         let backend = Self {
+            profile,
             id: format!("slcan:{device}:0"),
             device,
             shared,
@@ -325,6 +353,14 @@ impl SlcanBackend {
         }
     }
     async fn request(&self, channel: &str, operation: Operation) -> Result<(), Error> {
+        self.request_observed(channel, operation, None).await
+    }
+    async fn request_observed(
+        &self,
+        channel: &str,
+        operation: Operation,
+        trace: Option<canharbor_core::measurement::SubmissionTrace>,
+    ) -> Result<(), Error> {
         self.channel(channel)?;
         if self.shared.closing.load(Ordering::Acquire) {
             return Err(Error::Fault(BackendFault::Disconnected));
@@ -333,8 +369,15 @@ impl SlcanBackend {
             return Err(Error::Fault(fault));
         }
         let (reply, receive) = oneshot::channel();
+        if let Some(t) = &trace {
+            t.enqueued();
+        }
         self.commands
-            .try_send(Request { operation, reply })
+            .try_send(Request {
+                operation,
+                reply,
+                trace,
+            })
             .map_err(|error| match error {
                 TrySendError::Full(_) => Error::QueueFull,
                 TrySendError::Disconnected(_) => Error::Fault(BackendFault::Disconnected),
@@ -350,10 +393,24 @@ impl Drop for SlcanBackend {
     }
 }
 impl Backend for SlcanBackend {
+    fn submit_observed<'a>(
+        &'a self,
+        c: &'a str,
+        f: Frame,
+        p: Permit,
+        t: canharbor_core::measurement::SubmissionTrace,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(self.request_observed(c, Operation::Transmit(f, p), Some(t)))
+    }
+
     fn channels(&self) -> Vec<Channel> {
         vec![Channel {
             id: self.id.clone(),
-            label: "SLCAN Classic CAN (hardware unverified)".into(),
+            label: match self.profile {
+                Profile::Lawicel => "SLCAN Classic CAN (hardware unverified)",
+                Profile::CanableFd => "SLCAN CANable FD (unconfirmed commands)",
+            }
+            .into(),
         }]
     }
     fn capabilities(&self, channel: &str) -> Result<Capabilities, Error> {
@@ -362,13 +419,13 @@ impl Backend for SlcanBackend {
             device_id: self.device.clone(),
             backend: "slcan".into(),
             simulated: false,
-            fd: false,
+            fd: self.profile == Profile::CanableFd,
             listen_only: true,
-            timestamps: true,
+            timestamps: self.profile == Profile::Lawicel,
             nominal_timing: None,
             data_timing: None,
-            fixed_nominal_bitrates: BITRATES.to_vec(),
-            fixed_data_bitrates: vec![],
+            fixed_nominal_bitrates: self.profile.nominal_bitrates().to_vec(),
+            fixed_data_bitrates: self.profile.data_bitrates().to_vec(),
         })
     }
     fn check_channel(&self, channel: &str) -> Result<u64, Error> {
